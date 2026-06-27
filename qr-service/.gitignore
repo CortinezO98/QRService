@@ -1,0 +1,39 @@
+# Secrets — NEVER commit these
+.env
+.env.local
+.env.production
+*.pem
+*.key
+*.crt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Docker
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Security baselines (track these)
+# .secrets.baseline  ← keep this in git
+
+# Generated QR images (if stored locally)
+/tmp/qr_codes/

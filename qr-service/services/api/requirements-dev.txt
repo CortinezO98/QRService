@@ -1,0 +1,12 @@
+pytest==7.4.4
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+httpx==0.26.0               # Test client
+factory-boy==3.3.0          # Test factories
+faker==22.2.0
+testcontainers==3.7.1       # Real DB in tests
+ruff==0.1.14                # Linter + formatter
+mypy==1.8.0                 # Type checker
+bandit==1.7.6               # Security linter
+safety==3.0.1               # Dependency vulnerability scanner
+pre-commit==3.6.0

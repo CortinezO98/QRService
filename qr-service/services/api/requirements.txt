@@ -1,0 +1,44 @@
+# ── Core Framework ───────────────────────────────────────────
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+gunicorn==21.2.0
+
+# ── Database ─────────────────────────────────────────────────
+sqlalchemy==2.0.25
+alembic==1.13.1
+asyncpg==0.29.0          # Async PostgreSQL driver
+psycopg2-binary==2.9.9   # Sync driver (Alembic)
+
+# ── Cache / Queue ─────────────────────────────────────────────
+redis[hiredis]==5.0.1
+celery==5.3.6
+redbeat==2.2.0            # Redis-backed Celery Beat
+
+# ── Auth & Security ──────────────────────────────────────────
+python-jose[cryptography]==3.3.0   # JWT
+passlib[bcrypt]==1.7.4             # Password hashing
+python-multipart==0.0.7            # Form data
+cryptography==41.0.7
+
+# ── Validation ───────────────────────────────────────────────
+pydantic==2.5.3
+pydantic-settings==2.1.0
+email-validator==2.1.0
+
+# ── QR Generation ────────────────────────────────────────────
+qrcode[pil]==7.4.2
+Pillow==10.2.0
+
+# ── HTTP Client (Stripe, Webhooks) ───────────────────────────
+httpx==0.26.0
+stripe==7.12.0
+
+# ── Observability ────────────────────────────────────────────
+prometheus-fastapi-instrumentator==6.1.0
+structlog==24.1.0
+sentry-sdk[fastapi]==1.40.0
+
+# ── Utilities ────────────────────────────────────────────────
+python-slugify==8.0.1
+shortuuid==1.0.11
+pytz==2023.4
