@@ -16,7 +16,8 @@ celery-redbeat==2.2.0        # Redis-backed Celery Beat
 
 # ── Auth & Security ──────────────────────────────────────────
 python-jose[cryptography]==3.3.0   # JWT
-passlib[bcrypt]==1.7.4             # Password hashing
+passlib==1.7.4
+bcrypt==4.0.1             # Password hashing
 python-multipart==0.0.7            # Form data
 cryptography==41.0.7
 

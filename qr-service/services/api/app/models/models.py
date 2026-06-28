@@ -93,10 +93,12 @@ class Subscription(TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     plan: Mapped[SubscriptionPlan] = mapped_column(
-        Enum(SubscriptionPlan), nullable=False, default=SubscriptionPlan.FREE
+        Enum(SubscriptionPlan, values_callable=lambda x: [e.value for e in x]),
+        nullable=False, default=SubscriptionPlan.FREE
     )
     status: Mapped[SubscriptionStatus] = mapped_column(
-        Enum(SubscriptionStatus), nullable=False, default=SubscriptionStatus.ACTIVE
+        Enum(SubscriptionStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False, default=SubscriptionStatus.ACTIVE
     )
     # Para FREE: fecha de expiración mensual (debe renovar manualmente)
     # Para planes de pago: fecha de vencimiento anual
@@ -148,7 +150,8 @@ class QRCode(TimestampMixin, Base):
     # FREE plan: el QR puede estar INACTIVE si no renovó el mes
     # Planes de pago: siempre ACTIVE hasta que cancelen
     status: Mapped[QRStatus] = mapped_column(
-        Enum(QRStatus), nullable=False, default=QRStatus.ACTIVE
+        Enum(QRStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False, default=QRStatus.ACTIVE
     )
     # Para FREE: cuándo expira este QR (30 días desde creación)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
