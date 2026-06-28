@@ -46,7 +46,7 @@ async def list_qr_codes(
         for qr in qr_codes
     ]
 
-    total = await service.count_qr_codes(current_user.id)
+    total = len(qr_codes)
 
     return QRListResponse(
         items=items,

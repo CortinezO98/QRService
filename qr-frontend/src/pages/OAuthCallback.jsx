@@ -1,11 +1,9 @@
 /**
  * OAuthCallback.jsx
- * Google/Facebook redirigen aquí después del login exitoso.
- * Captura los tokens de la URL, los guarda y redirige al dashboard.
+ * Captura tokens de Google/Facebook y redirige al dashboard.
  */
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { QrCode } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function OAuthCallback() {
@@ -21,8 +19,8 @@ export default function OAuthCallback() {
 
     if (err) {
       const messages = {
-        google_failed:   'No se pudo iniciar sesión con Google. Intenta de nuevo.',
-        facebook_failed: 'No se pudo iniciar sesión con Facebook. Intenta de nuevo.',
+        google_failed:   'No se pudo iniciar sesión con Google.',
+        facebook_failed: 'No se pudo iniciar sesión con Facebook.',
       }
       setError(messages[err] || 'Error al iniciar sesión.')
       setTimeout(() => navigate('/login'), 3000)
@@ -30,14 +28,15 @@ export default function OAuthCallback() {
     }
 
     if (accessToken && refreshToken) {
+      // Guardar tokens
       localStorage.setItem('access_token', accessToken)
       localStorage.setItem('refresh_token', refreshToken)
 
       const providerName = provider === 'google' ? 'Google' : 'Facebook'
       toast.success(`¡Sesión iniciada con ${providerName}!`)
 
-      // Pequeño delay para que el toast se vea
-      setTimeout(() => navigate('/dashboard'), 500)
+      // Forzar recarga completa para que useAuth detecte el nuevo token
+      window.location.href = '/dashboard'
     } else {
       setError('No se recibieron tokens. Intenta de nuevo.')
       setTimeout(() => navigate('/login'), 3000)
@@ -58,9 +57,13 @@ export default function OAuthCallback() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center',
                  justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
-      <div style={{ width: 48, height: 48, border: '3px solid #5B21B6',
-                   borderTopColor: 'transparent', borderRadius: '50%',
-                   animation: 'spin 0.8s linear infinite' }} />
+      <div style={{
+        width: 48, height: 48,
+        border: '3px solid #5B21B6',
+        borderTopColor: 'transparent',
+        borderRadius: '50%',
+        animation: 'spin 0.8s linear infinite'
+      }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <p style={{ color: '#6b7280', fontSize: 14 }}>Iniciando sesión...</p>
     </div>

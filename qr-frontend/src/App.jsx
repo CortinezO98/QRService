@@ -25,13 +25,13 @@ function AppRoutes() {
     <>
       {user && <Navbar />}
       <Routes>
-        {/* Públicas */}
+        {/* OAuth callback — SIEMPRE accesible, sin importar si hay sesión */}
+        <Route path="/oauth/callback" element={<OAuthCallback />} />
+
+        {/* Públicas — redirigen al dashboard si ya hay sesión */}
         <Route path="/"         element={user ? <Navigate to="/dashboard" /> : <LandingPage />} />
         <Route path="/login"    element={user ? <Navigate to="/dashboard" /> : <Login />} />
         <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
-
-        {/* Callback OAuth — captura tokens de Google/Facebook */}
-        <Route path="/oauth/callback" element={<OAuthCallback />} />
 
         {/* Protegidas */}
         <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />

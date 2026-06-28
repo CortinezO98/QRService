@@ -82,7 +82,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     SWEBOK v4: Software Security — Availability
     """
     # Paths exempt from rate limiting
-    EXEMPT_PATHS = {"/health", "/metrics", "/docs", "/redoc", "/openapi.json"}
+    EXEMPT_PATHS = {"/health", "/metrics", "/docs", "/redoc", "/openapi.json", "/api/v1/auth/google/callback", "/api/v1/auth/facebook/callback"}
 
     async def dispatch(self, request: Request, call_next) -> Response:
         if request.url.path in self.EXEMPT_PATHS:

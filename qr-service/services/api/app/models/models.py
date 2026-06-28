@@ -1,10 +1,10 @@
 """
 Database Models — SQLAlchemy 2.0
 Nuevo modelo de negocio:
-  FREE:     1 QR/mes, renueva manualmente cada 30 días
-  STARTER:  5 QR totales → $10/año
-  PRO:      15 QR totales → $20/año
-  BUSINESS: 30 QR totales → $30/año
+    FREE:     1 QR/mes, renueva manualmente cada 30 días
+    STARTER:  5 QR totales → $10/año
+    PRO:      15 QR totales → $20/año
+    BUSINESS: 30 QR totales → $30/año
 """
 import uuid
 from datetime import datetime, timezone
@@ -100,17 +100,10 @@ class Subscription(TimestampMixin, Base):
         Enum(SubscriptionStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False, default=SubscriptionStatus.ACTIVE
     )
-    # Para FREE: fecha de expiración mensual (debe renovar manualmente)
-    # Para planes de pago: fecha de vencimiento anual
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-    # Cuántos QR puede tener el usuario según su plan
     qr_quota: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    # Cuántos QR ha creado en este período (para FREE: en el mes actual)
     qr_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-    # Stripe (solo planes de pago)
     stripe_subscription_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True)
     stripe_customer_id: Mapped[Optional[str]] = mapped_column(String(255))
     amount_paid_usd: Mapped[Optional[float]] = mapped_column(Float)
@@ -144,16 +137,30 @@ class QRCode(TimestampMixin, Base):
     short_code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False, index=True)
     title: Mapped[Optional[str]] = mapped_column(String(255))
     destination_url: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # ── Tipo y payload (migración 004) ────────────────────────
+    qr_type: Mapped[str] = mapped_column(
+        Enum("url", "text", "email", "phone", "whatsapp", "wifi", "sms", "vcard",
+            "maps", "pdf", "youtube", "spotify", "facebook", "instagram", "twitter",
+            "tiktok", "linkedin", "telegram", "calendar", "paypal", "crypto", "reddit",
+            "amazon", "wechat", "snapchat", "venmo", "barcode2d", "upi", "office365",
+            "googledoc", "googleforms", "googlesheets", "googlereview", "logo", "shaped",
+            "booking", "etsy", "png", "pptx", "excel", "archivo", "linktree", "line",
+            "kakaotalk", "pcr", "video",
+            name="qrtype", create_type=False),
+        nullable=False, server_default="url"
+    )
+    payload: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True, comment="Datos estructurados según el tipo de QR"
+    )
+    # ──────────────────────────────────────────────────────────
+
     style_config: Mapped[Optional[dict]] = mapped_column(JSONB, default=dict)
     scan_count: Mapped[int] = mapped_column(Integer, default=0)
-
-    # FREE plan: el QR puede estar INACTIVE si no renovó el mes
-    # Planes de pago: siempre ACTIVE hasta que cancelen
     status: Mapped[QRStatus] = mapped_column(
         Enum(QRStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False, default=QRStatus.ACTIVE
     )
-    # Para FREE: cuándo expira este QR (30 días desde creación)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship(back_populates="qr_codes")
@@ -172,7 +179,7 @@ class QRScan(Base):
     qr_code_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("qr_codes.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    ip_hash: Mapped[Optional[str]] = mapped_column(String(64))   # SHA-256, nunca IP raw
+    ip_hash: Mapped[Optional[str]] = mapped_column(String(64))
     user_agent: Mapped[Optional[str]] = mapped_column(String(512))
     country_code: Mapped[Optional[str]] = mapped_column(String(2))
     referer: Mapped[Optional[str]] = mapped_column(String(512))
