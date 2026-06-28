@@ -1,7 +1,5 @@
 """
-Pydantic Schemas — Request/Response DTOs
-SWEBOK v4: Software Design — Data Transfer Objects
-OWASP: Input validation at boundary (never trust user input)
+Pydantic Schemas — DTOs actualizados para el nuevo modelo de negocio
 """
 from datetime import datetime
 from typing import List, Optional
@@ -10,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
-# ── Auth Schemas ──────────────────────────────────────────────
+# ── Auth ──────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -20,11 +18,10 @@ class RegisterRequest(BaseModel):
     @field_validator("full_name")
     @classmethod
     def sanitize_name(cls, v: str) -> str:
-        # Strip HTML/scripts from name field
         import re
         cleaned = re.sub(r"<[^>]+>", "", v).strip()
         if not cleaned:
-            raise ValueError("Full name cannot be empty after sanitization")
+            raise ValueError("El nombre no puede estar vacío.")
         return cleaned
 
 
@@ -41,7 +38,7 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
-    expires_in: int  # seconds
+    expires_in: int
 
 
 class UserResponse(BaseModel):
@@ -54,10 +51,9 @@ class UserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── QR Schemas ────────────────────────────────────────────────
+# ── QR ────────────────────────────────────────────────────────
 
 class QRStyleConfig(BaseModel):
-    """QR visual customization options."""
     foreground_color: str = Field(default="#000000", pattern=r"^#[0-9A-Fa-f]{6}$")
     background_color: str = Field(default="#FFFFFF", pattern=r"^#[0-9A-Fa-f]{6}$")
     error_correction: str = Field(default="M", pattern=r"^[LMQH]$")
@@ -66,19 +62,14 @@ class QRStyleConfig(BaseModel):
     module_style: str = Field(default="square", pattern=r"^(square|rounded|circle)$")
 
     @model_validator(mode="after")
-    def colors_must_be_different(self) -> "QRStyleConfig":
+    def colors_must_differ(self) -> "QRStyleConfig":
         if self.foreground_color.upper() == self.background_color.upper():
-            raise ValueError("Foreground and background colors must be different")
+            raise ValueError("El color de frente y fondo no pueden ser iguales.")
         return self
 
 
 class QRCreateRequest(BaseModel):
-    destination_url: str = Field(
-        min_length=7,
-        max_length=2048,
-        description="Target URL the QR code redirects to",
-        examples=["https://example.com/my-page"],
-    )
+    destination_url: str = Field(min_length=7, max_length=2048)
     title: Optional[str] = Field(default=None, max_length=255)
     style: Optional[QRStyleConfig] = None
 
@@ -87,7 +78,7 @@ class QRCreateRequest(BaseModel):
     def url_must_be_http(cls, v: str) -> str:
         v = v.strip()
         if not v.startswith(("http://", "https://")):
-            raise ValueError("URL must start with http:// or https://")
+            raise ValueError("La URL debe comenzar con http:// o https://")
         return v
 
 
@@ -95,7 +86,6 @@ class QRUpdateRequest(BaseModel):
     destination_url: Optional[str] = Field(default=None, min_length=7, max_length=2048)
     title: Optional[str] = Field(default=None, max_length=255)
     style: Optional[QRStyleConfig] = None
-    is_active: Optional[bool] = None
 
 
 class QRResponse(BaseModel):
@@ -104,7 +94,7 @@ class QRResponse(BaseModel):
     title: Optional[str]
     destination_url: str
     scan_count: int
-    is_active: bool
+    status: str
     created_at: datetime
     expires_at: Optional[datetime]
     redirect_url: str
@@ -115,8 +105,16 @@ class QRResponse(BaseModel):
     @classmethod
     def from_model(cls, qr, base_url: str) -> "QRResponse":
         return cls(
-            **{k: getattr(qr, k) for k in cls.model_fields if hasattr(qr, k)},
+            id=qr.id,
+            short_code=qr.short_code,
+            title=qr.title,
+            destination_url=qr.destination_url,
+            scan_count=qr.scan_count,
+            status=qr.status.value,
+            created_at=qr.created_at,
+            expires_at=qr.expires_at,
             redirect_url=f"{base_url}/r/{qr.short_code}",
+            style_config=qr.style_config,
         )
 
 
@@ -132,12 +130,15 @@ class QRAnalyticsResponse(BaseModel):
     daily_breakdown: List[dict]
 
 
-# ── Subscription Schemas ──────────────────────────────────────
+# ── Subscription ──────────────────────────────────────────────
 
 class SubscriptionResponse(BaseModel):
     id: UUID
     plan: str
     status: str
+    qr_quota: int
+    qr_used: int
+    qr_remaining: int
     starts_at: datetime
     expires_at: datetime
     days_remaining: int
@@ -153,19 +154,35 @@ class SubscriptionResponse(BaseModel):
             id=sub.id,
             plan=sub.plan.value,
             status=sub.status.value,
+            qr_quota=sub.qr_quota,
+            qr_used=sub.qr_used,
+            qr_remaining=sub.qr_remaining,
             starts_at=sub.starts_at,
             expires_at=sub.expires_at,
             days_remaining=days,
         )
 
 
+# ── Billing ───────────────────────────────────────────────────
+
+class CheckoutRequest(BaseModel):
+    """El usuario elige qué plan quiere comprar."""
+    plan: str = Field(
+        description="Plan a contratar: starter, pro o business",
+        pattern=r"^(starter|pro|business)$",
+    )
+
+
 class CheckoutResponse(BaseModel):
     checkout_url: str
-    plan: str = "annual"
+    plan: str
     price_usd: float
+    qr_quota: int
+    price_per_qr: float
+    duration_days: int
 
 
-# ── Common Schemas ────────────────────────────────────────────
+# ── Common ────────────────────────────────────────────────────
 
 class MessageResponse(BaseModel):
     message: str

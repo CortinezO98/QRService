@@ -66,9 +66,8 @@ COPY --chown=appuser:appgroup app/ ./app/
 COPY --chown=appuser:appgroup alembic.ini ./
 COPY --chown=appuser:appgroup alembic/ ./alembic/
 
-# Security hardening
-RUN chmod -R 550 /app && \
-    chmod -R 770 /app/alembic
+# Fix: dar ownership completo a appuser sin restringir permisos de ejecución
+RUN chown -R appuser:appgroup /app
 
 USER appuser
 
@@ -79,7 +78,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["gunicorn", "app.main:app", \
-     "-k", "uvicorn.workers.UvicornWorker", \
-     "-w", "4", "--bind", "0.0.0.0:8000", \
-     "--timeout", "30", "--keep-alive", "5", \
-     "--access-logfile", "-", "--error-logfile", "-"]
+        "-k", "uvicorn.workers.UvicornWorker", \
+        "-w", "4", "--bind", "0.0.0.0:8000", \
+        "--timeout", "30", "--keep-alive", "5", \
+        "--access-logfile", "-", "--error-logfile", "-"]

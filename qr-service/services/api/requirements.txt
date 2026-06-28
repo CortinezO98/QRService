@@ -12,7 +12,7 @@ psycopg2-binary==2.9.9   # Sync driver (Alembic)
 # ── Cache / Queue ─────────────────────────────────────────────
 redis[hiredis]==5.0.1
 celery==5.3.6
-redbeat==2.2.0            # Redis-backed Celery Beat
+celery-redbeat==2.2.0        # Redis-backed Celery Beat
 
 # ── Auth & Security ──────────────────────────────────────────
 python-jose[cryptography]==3.3.0   # JWT

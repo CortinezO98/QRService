@@ -45,9 +45,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         )
         # Referrer Policy
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
         # Remove server fingerprint
-        response.headers.pop("server", None)
-        response.headers.pop("x-powered-by", None)
+        # Fix: MutableHeaders no tiene .pop(), usar del con verificación
+        if "server" in response.headers:
+            del response.headers["server"]
+        if "x-powered-by" in response.headers:
+            del response.headers["x-powered-by"]
 
         return response
 
@@ -88,8 +92,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         limit = self._get_limit(request)
         key = self._get_key(request)
 
-        redis = await get_redis_client()
-        allowed, remaining, reset_in = await self._check_rate(redis, key, limit)
+        try:
+            redis = await get_redis_client()
+            allowed, remaining, reset_in = await self._check_rate(redis, key, limit)
+        except Exception:
+            # Si Redis falla, dejar pasar la request (fail open para disponibilidad)
+            return await call_next(request)
 
         if not allowed:
             logger.warning(
@@ -120,10 +128,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
     def _get_limit(self, request: Request) -> int:
-        """Determine rate limit based on auth status."""
         token = request.headers.get("Authorization", "")
         if token.startswith("Bearer "):
-            # TODO: decode token to check plan
             return settings.RATE_LIMIT_FREE_PER_MINUTE
         return settings.RATE_LIMIT_ANON_PER_MINUTE
 
@@ -133,14 +139,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return f"ratelimit:{ip}:{minute}"
 
     def _get_client_ip(self, request: Request) -> str:
-        """Get real IP behind reverse proxy."""
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
             return forwarded.split(",")[0].strip()
         return request.client.host if request.client else "unknown"
 
     async def _check_rate(self, redis, key: str, limit: int):
-        """Sliding window rate limit using Redis atomic operations."""
         pipe = redis.pipeline()
         pipe.incr(key)
         pipe.expire(key, 60)

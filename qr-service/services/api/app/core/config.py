@@ -1,45 +1,38 @@
 """
-Application Configuration — Security-first settings
-SWEBOK v4: Software Configuration Management
-OWASP: Secrets Management
+Application Configuration — Nuevo modelo de precios
+FREE:     $0     — 1 QR/mes, renovación manual
+STARTER:  $10/año — 5 QR totales
+PRO:      $20/año — 15 QR totales
+BUSINESS: $30/año — 30 QR totales
 """
 from functools import lru_cache
 from typing import List
-from pydantic import (
-    AnyHttpUrl,
-    PostgresDsn,
-    RedisDsn,
-    field_validator,
-    model_validator,
-)
+from pydantic import AnyHttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """
-    All settings loaded from environment variables.
-    NO hardcoded secrets. EVER. (OWASP A02:2021 – Cryptographic Failures)
-    """
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
-        extra="forbid",  # Fail fast on unknown env vars
+        extra="forbid",
     )
 
     # ── App ───────────────────────────────────────────────────
-    APP_VERSION: str = "1.0.0"
+    APP_VERSION: str = "2.0.0"
     ENVIRONMENT: str = "production"
     DEBUG: bool = False
     ALLOWED_HOSTS: List[str] = ["*"]
     CORS_ORIGINS: List[AnyHttpUrl] = []
+    BASE_URL: str = "http://localhost:8000"
 
     # ── Security ──────────────────────────────────────────────
-    SECRET_KEY: str                           # Min 32 chars, generated with: openssl rand -hex 32
+    SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ALGORITHM: str = "HS256"
-    BCRYPT_ROUNDS: int = 12                   # OWASP: min 10 rounds
+    BCRYPT_ROUNDS: int = 12
 
     # ── Database ──────────────────────────────────────────────
     POSTGRES_HOST: str
@@ -71,20 +64,35 @@ class Settings(BaseSettings):
 
     # ── Rate Limiting ─────────────────────────────────────────
     RATE_LIMIT_FREE_PER_MINUTE: int = 10
-    RATE_LIMIT_ANNUAL_PER_MINUTE: int = 100
+    RATE_LIMIT_PAID_PER_MINUTE: int = 60
     RATE_LIMIT_ANON_PER_MINUTE: int = 5
 
-    # ── QR Service ────────────────────────────────────────────
-    FREE_PLAN_QR_LIMIT: int = 5
-    FREE_PLAN_DURATION_DAYS: int = 30
-    ANNUAL_PLAN_DURATION_DAYS: int = 365
-    ANNUAL_PLAN_PRICE_USD: float = 49.99
-    BASE_URL: str = "http://localhost:8000"   # For short-link redirects
+    # ── Plan: FREE ────────────────────────────────────────────
+    FREE_PLAN_QR_QUOTA: int = 1          # 1 QR activo por mes
+    FREE_PLAN_DURATION_DAYS: int = 30    # Debe renovar cada 30 días
+    FREE_QR_EXPIRY_DAYS: int = 30        # El QR expira con la suscripción
 
-    # ── Stripe ────────────────────────────────────────────────
+    # ── Plan: STARTER — $10/año ───────────────────────────────
+    STARTER_PLAN_QR_QUOTA: int = 5
+    STARTER_PLAN_PRICE_USD: float = 10.00
+    STARTER_PLAN_DURATION_DAYS: int = 365
+
+    # ── Plan: PRO — $20/año ───────────────────────────────────
+    PRO_PLAN_QR_QUOTA: int = 15
+    PRO_PLAN_PRICE_USD: float = 20.00
+    PRO_PLAN_DURATION_DAYS: int = 365
+
+    # ── Plan: BUSINESS — $30/año ──────────────────────────────
+    BUSINESS_PLAN_QR_QUOTA: int = 30
+    BUSINESS_PLAN_PRICE_USD: float = 30.00
+    BUSINESS_PLAN_DURATION_DAYS: int = 365
+
+    # ── Stripe Price IDs ──────────────────────────────────────
     STRIPE_SECRET_KEY: str
     STRIPE_WEBHOOK_SECRET: str
-    STRIPE_ANNUAL_PRICE_ID: str
+    STRIPE_STARTER_PRICE_ID: str
+    STRIPE_PRO_PRICE_ID: str
+    STRIPE_BUSINESS_PRICE_ID: str
 
     # ── Email ─────────────────────────────────────────────────
     SMTP_HOST: str = ""
@@ -92,6 +100,7 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     EMAILS_FROM: str = "noreply@qrservice.com"
+    EMAILS_FROM_NAME: str = "QR Service"
 
     # ── Sentry ────────────────────────────────────────────────
     SENTRY_DSN: str = ""
@@ -101,14 +110,7 @@ class Settings(BaseSettings):
     @classmethod
     def secret_key_must_be_strong(cls, v: str) -> str:
         if len(v) < 32:
-            raise ValueError("SECRET_KEY must be at least 32 characters (use: openssl rand -hex 32)")
-        return v
-
-    @field_validator("BCRYPT_ROUNDS")
-    @classmethod
-    def bcrypt_rounds_minimum(cls, v: int) -> int:
-        if v < 10:
-            raise ValueError("BCRYPT_ROUNDS must be >= 10 (OWASP recommendation)")
+            raise ValueError("SECRET_KEY must be at least 32 characters")
         return v
 
     @model_validator(mode="after")
@@ -117,10 +119,33 @@ class Settings(BaseSettings):
             raise ValueError("DEBUG must be False in production!")
         return self
 
+    def get_plan_quota(self, plan: str) -> int:
+        """Retorna cuota de QR según el plan."""
+        return {
+            "free":     self.FREE_PLAN_QR_QUOTA,
+            "starter":  self.STARTER_PLAN_QR_QUOTA,
+            "pro":      self.PRO_PLAN_QR_QUOTA,
+            "business": self.BUSINESS_PLAN_QR_QUOTA,
+        }.get(plan, 1)
+
+    def get_plan_price(self, plan: str) -> float:
+        return {
+            "free":     0.00,
+            "starter":  self.STARTER_PLAN_PRICE_USD,
+            "pro":      self.PRO_PLAN_PRICE_USD,
+            "business": self.BUSINESS_PLAN_PRICE_USD,
+        }.get(plan, 0.00)
+
+    def get_stripe_price_id(self, plan: str) -> str:
+        return {
+            "starter":  self.STRIPE_STARTER_PRICE_ID,
+            "pro":      self.STRIPE_PRO_PRICE_ID,
+            "business": self.STRIPE_BUSINESS_PRICE_ID,
+        }.get(plan, "")
+
 
 @lru_cache()
 def get_settings() -> Settings:
-    """Cached settings instance — singleton pattern."""
     return Settings()
 
 

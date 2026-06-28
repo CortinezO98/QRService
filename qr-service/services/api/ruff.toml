@@ -1,0 +1,39 @@
+# SWEBOK v4: Software Quality — Code Standards
+# Ruff: Python linter + formatter (replaces flake8, isort, black)
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["app"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "S",    # flake8-bandit (security)
+    "T20",  # flake8-print (no print statements)
+    "RET",  # flake8-return
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "PTH",  # use pathlib
+]
+
+ignore = [
+    "S101",  # assert is allowed in tests
+    "S105",  # allow hardcoded "password" in test fixtures
+    "B008",  # FastAPI Depends() in function arguments
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"app/tests/**" = ["S", "T20"]  # Relax security checks in tests
+"alembic/**" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

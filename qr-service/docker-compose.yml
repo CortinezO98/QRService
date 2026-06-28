@@ -2,7 +2,7 @@ version: "3.9"
 
 # ============================================================
 # QR-as-a-Service — Docker Compose (Production-grade)
-# SWEBOK v4: Software Construction + Configuration Management
+# Puerto API: 7000 (host) → 8000 (contenedor)
 # ============================================================
 
 x-api-common: &api-common
@@ -21,13 +21,11 @@ x-api-common: &api-common
     - internal
   security_opt:
     - no-new-privileges:true
-  read_only: true
   tmpfs:
     - /tmp
 
 services:
 
-  # ── API ──────────────────────────────────────────────────
   api:
     <<: *api-common
     container_name: qr_api
@@ -37,8 +35,8 @@ services:
       -w 4 --bind 0.0.0.0:8000
       --access-logfile - --error-logfile -
       --timeout 30 --keep-alive 5
-    expose:
-      - "8000"
+    ports:
+      - "7000:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -51,7 +49,6 @@ services:
           memory: 512M
           cpus: "1.0"
 
-  # ── Async Worker (Celery) ─────────────────────────────────
   worker:
     <<: *api-common
     container_name: qr_worker
@@ -64,7 +61,6 @@ services:
         limits:
           memory: 256M
 
-  # ── Scheduler (Celery Beat) ───────────────────────────────
   scheduler:
     <<: *api-common
     container_name: qr_scheduler
@@ -74,7 +70,6 @@ services:
         limits:
           memory: 128M
 
-  # ── Database ──────────────────────────────────────────────
   db:
     image: postgres:16-alpine
     container_name: qr_db
@@ -101,7 +96,6 @@ services:
         limits:
           memory: 512M
 
-  # ── Redis ─────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: qr_redis
@@ -119,13 +113,12 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # ── Nginx Reverse Proxy ───────────────────────────────────
   nginx:
     image: nginx:1.25-alpine
     container_name: qr_nginx
     ports:
-      - "80:80"
-      - "443:443"
+      - "8181:80"
+      - "8443:443"
     volumes:
       - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
@@ -139,7 +132,6 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # ── Prometheus ────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.48.0
     container_name: qr_prometheus
@@ -153,10 +145,11 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=30d"
 
-  # ── Grafana ───────────────────────────────────────────────
   grafana:
     image: grafana/grafana:10.2.0
     container_name: qr_grafana
+    ports:
+      - "3001:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
