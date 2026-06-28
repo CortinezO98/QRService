@@ -101,6 +101,15 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     EMAILS_FROM: str = "noreply@qrservice.com"
     EMAILS_FROM_NAME: str = "QR Service"
+    
+    
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:7000/api/v1/auth/google/callback"
+    FACEBOOK_CLIENT_ID: str = ""
+    FACEBOOK_CLIENT_SECRET: str = ""
+    FACEBOOK_REDIRECT_URI: str = "http://localhost:7000/api/v1/auth/facebook/callback"
+    FRONTEND_URL: str = "http://localhost:5200"
 
     # ── Sentry ────────────────────────────────────────────────
     SENTRY_DSN: str = ""

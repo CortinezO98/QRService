@@ -1,18 +1,25 @@
 """
-API v1 Router — Aggregates all endpoint routers
-SWEBOK v4: Software Design — Modular decomposition
+API v1 Router — con OAuth incluido
+Reemplaza el router.py existente
 """
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, billing, qr, redirect
+from app.api.v1.endpoints import auth, billing, qr, redirect, oauth
 
 api_router = APIRouter()
 
-# ── Auth ──────────────────────────────────────────────────────
+# ── Auth (email/password) ─────────────────────────────────────
 api_router.include_router(
     auth.router,
     prefix="/auth",
     tags=["Authentication"],
+)
+
+# ── OAuth (Google, Facebook) ──────────────────────────────────
+api_router.include_router(
+    oauth.router,
+    prefix="/auth",
+    tags=["OAuth Social Login"],
 )
 
 # ── QR Codes ──────────────────────────────────────────────────
@@ -29,7 +36,4 @@ api_router.include_router(
     tags=["Billing & Subscriptions"],
 )
 
-# ── Public Redirect (mounted at root, not /api/v1) ───────────
-# Note: redirect is registered directly on the app in main.py
-# This export is kept for reference
 redirect_router = redirect.router

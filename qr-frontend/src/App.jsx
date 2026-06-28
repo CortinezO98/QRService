@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import CreateQR from './pages/CreateQR'
 import Billing from './pages/Billing'
 import LandingPage from './pages/LandingPage'
+import OAuthCallback from './pages/OAuthCallback'
 import Navbar from './components/Navbar'
 
 function PrivateRoute({ children }) {
@@ -24,15 +25,19 @@ function AppRoutes() {
     <>
       {user && <Navbar />}
       <Routes>
-        {/* Landing page — solo si no hay sesión */}
-        <Route path="/" element={user ? <Navigate to="/dashboard" /> : <LandingPage />} />
-        <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
+        {/* Públicas */}
+        <Route path="/"         element={user ? <Navigate to="/dashboard" /> : <LandingPage />} />
+        <Route path="/login"    element={user ? <Navigate to="/dashboard" /> : <Login />} />
         <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
-        {/* App protegida */}
+
+        {/* Callback OAuth — captura tokens de Google/Facebook */}
+        <Route path="/oauth/callback" element={<OAuthCallback />} />
+
+        {/* Protegidas */}
         <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-        <Route path="/create" element={<PrivateRoute><CreateQR /></PrivateRoute>} />
-        <Route path="/billing" element={<PrivateRoute><Billing /></PrivateRoute>} />
-        <Route path="*" element={<Navigate to="/" />} />
+        <Route path="/create"    element={<PrivateRoute><CreateQR /></PrivateRoute>} />
+        <Route path="/billing"   element={<PrivateRoute><Billing /></PrivateRoute>} />
+        <Route path="*"          element={<Navigate to="/" />} />
       </Routes>
     </>
   )
