@@ -1,15 +1,15 @@
-/**
- * Billing.jsx — Planes, facturación y Customer Portal
- * Sprint 2: Agrega botón de Customer Portal para gestionar suscripción en Stripe.
- */
-import { useState, useEffect } from 'react'
-import { Check, Zap, Star, Crown, RefreshCw, ExternalLink, FileText } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Check, Crown, ExternalLink, FileText, RefreshCw, Shield, Sparkles, Star, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { billingAPI } from '../api/client'
+import Button from '../components/ui/Button'
+import LoadingScreen from '../components/ui/LoadingScreen'
+import PageHeader from '../components/ui/PageHeader'
+import Badge from '../components/ui/Badge'
+import { Card, CardBody } from '../components/ui/Card'
+import { formatCurrency, formatDate, normalizePlan } from '../lib/format'
 
-const PLAN_ICONS = {
-  free: Zap, starter: Star, pro: Star, business: Crown,
-}
+const PLAN_ICONS = { free: Zap, starter: Star, pro: Sparkles, business: Crown }
 
 export default function Billing() {
   const [plans, setPlans] = useState([])
@@ -21,23 +21,27 @@ export default function Billing() {
   const [openingPortal, setOpeningPortal] = useState(false)
 
   useEffect(() => {
-    // Llamadas independientes — si status falla (ej. 401) los planes igual se muestran
-    billingAPI.plans()
-      .then(res => setPlans(Array.isArray(res.data) ? res.data : []))
-      .catch(() => setPlans([]))
-
-    billingAPI.status()
-      .then(res => {
-        setSubscription(res.data)
-        if (res.data.plan !== 'free') {
-          billingAPI.invoices()
-            .then(inv => setInvoices(Array.isArray(inv.data) ? inv.data : []))
-            .catch(() => {})
+    Promise.allSettled([billingAPI.plans(), billingAPI.status()])
+      .then(([plansRes, subRes]) => {
+        if (plansRes.status === 'fulfilled') setPlans(Array.isArray(plansRes.value.data) ? plansRes.value.data : [])
+        if (subRes.status === 'fulfilled') {
+          setSubscription(subRes.value.data)
+          if (subRes.value.data?.plan !== 'free') {
+            billingAPI.invoices()
+              .then((res) => setInvoices(Array.isArray(res.data) ? res.data : []))
+              .catch(() => {})
+          }
         }
       })
-      .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+
+  const currentPlan = normalizePlan(subscription?.plan)
+  const hasPaidPlan = currentPlan !== 'free'
+  const sortedPlans = useMemo(() => {
+    const order = { free: 0, starter: 1, pro: 2, business: 3 }
+    return [...plans].sort((a, b) => (order[a.plan] ?? 99) - (order[b.plan] ?? 99))
+  }, [plans])
 
   const handleCheckout = async (plan) => {
     setCheckingOut(plan)
@@ -56,7 +60,7 @@ export default function Billing() {
       await billingAPI.renewFree()
       const { data } = await billingAPI.status()
       setSubscription(data)
-      toast.success('¡Renovado por 30 días más!')
+      toast.success('Renovado por 30 días más')
     } catch {
       toast.error('Error al renovar')
     } finally {
@@ -70,189 +74,129 @@ export default function Billing() {
       const { data } = await billingAPI.customerPortal()
       window.location.href = data.portal_url
     } catch {
-      toast.error('Error abriendo portal. Intenta de nuevo.')
+      toast.error('Error abriendo portal')
       setOpeningPortal(false)
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-violet-600" />
-      </div>
-    )
-  }
-
-  const hasPaidPlan = subscription?.plan && subscription.plan !== 'free'
-
-  if (plans.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-500 mb-3">No se pudieron cargar los planes.</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="text-sm text-violet-600 hover:underline"
-          >
-            Reintentar
-          </button>
-        </div>
-      </div>
-    )
-  }
+  if (loading) return <LoadingScreen label="Cargando planes..." />
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
+    <>
+      <PageHeader
+        eyebrow={<><Shield size={13} /> Pagos seguros con Stripe</>}
+        title="Planes simples para crecer"
+        description="Empieza gratis y mejora cuando necesites QR permanentes, analytics o funcionalidades avanzadas."
+        actions={subscription && <Badge variant="brand">Plan actual: {subscription.plan}</Badge>}
+      />
 
-      <div className="text-center mb-10">
-        <h1 className="text-3xl font-bold text-gray-900">Planes y precios</h1>
-        <p className="text-gray-500 mt-2">Elige el plan que mejor se adapte a tus necesidades</p>
-        {subscription && (
-          <div className="inline-flex items-center gap-2 mt-3 bg-violet-50 text-violet-700 px-4 py-1.5 rounded-full text-sm font-medium">
-            Plan actual: <span className="capitalize font-bold">{subscription.plan}</span>
-            — {subscription.days_remaining} días restantes
-          </div>
-        )}
-      </div>
-
-      {/* Planes */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-        {plans.map((plan) => {
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {sortedPlans.map((plan) => {
           const Icon = PLAN_ICONS[plan.plan] || Zap
-          const isCurrent = subscription?.plan === plan.plan
-          const isPopular = plan.is_popular
+          const isCurrent = currentPlan === plan.plan
+          const isPopular = plan.is_popular || plan.plan === 'business'
           const isPaid = plan.plan !== 'free'
 
           return (
-            <div
-              key={plan.plan}
-              className={`relative rounded-2xl border p-5 flex flex-col
-                ${isPopular ? 'border-amber-400 shadow-lg shadow-amber-100' : 'border-gray-200'}
-                ${isCurrent ? 'ring-2 ring-violet-500' : ''}`}
-            >
+            <Card key={plan.plan} hover className={`relative overflow-hidden ${isCurrent ? 'ring-2 ring-brand-500' : ''}`}>
               {isPopular && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <span className="bg-amber-400 text-white text-xs font-bold px-3 py-1 rounded-full">
-                    MEJOR VALOR
-                  </span>
-                </div>
-              )}
-              {isCurrent && (
-                <div className="absolute -top-3 right-4">
-                  <span className="bg-violet-600 text-white text-xs font-bold px-3 py-1 rounded-full">
-                    TU PLAN
-                  </span>
+                <div className="absolute right-4 top-4">
+                  <Badge variant="amber">Mejor valor</Badge>
                 </div>
               )}
 
-              <div className="flex items-center gap-2 mb-4">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center
-                  ${plan.plan === 'business' ? 'bg-amber-100' : 'bg-violet-100'}`}>
-                  <Icon size={18} className={plan.plan === 'business' ? 'text-amber-600' : 'text-violet-600'} />
+              <CardBody className="flex h-full flex-col">
+                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
+                  <Icon size={23} />
                 </div>
-                <span className="font-bold text-gray-900 capitalize">{plan.plan}</span>
-              </div>
 
-              <div className="mb-4">
-                <span className="text-3xl font-bold text-gray-900">${plan.price_usd.toFixed(0)}</span>
-                <span className="text-gray-500 text-sm">{plan.price_usd > 0 ? '/año' : ' gratis'}</span>
-                {plan.qr_quota > 0 && plan.price_usd > 0 && (
-                  <p className="text-xs text-gray-400 mt-0.5">${plan.price_per_qr.toFixed(2)} por QR</p>
-                )}
-              </div>
+                <h3 className="text-xl font-black capitalize text-ink-950">{plan.plan}</h3>
+                <p className="mt-1 text-sm text-ink-500">
+                  {plan.plan === 'free' ? 'Para probar la plataforma.' : 'QR permanentes y más capacidad.'}
+                </p>
 
-              <ul className="space-y-2 mb-6 flex-1">
-                <li className="flex items-center gap-2 text-sm text-gray-600">
-                  <Check size={14} className="text-green-500 flex-shrink-0" />
-                  {plan.qr_quota} QR {plan.plan === 'free' ? 'por mes' : 'permanentes'}
-                </li>
-                <li className="flex items-center gap-2 text-sm text-gray-600">
-                  <Check size={14} className={plan.analytics ? 'text-green-500' : 'text-gray-300'} />
-                  <span className={!plan.analytics ? 'text-gray-400' : ''}>Analytics</span>
-                </li>
-                <li className="flex items-center gap-2 text-sm text-gray-600">
-                  <Check size={14} className={plan.custom_logo ? 'text-green-500' : 'text-gray-300'} />
-                  <span className={!plan.custom_logo ? 'text-gray-400' : ''}>Logo personalizado</span>
-                </li>
-                <li className="flex items-center gap-2 text-sm text-gray-600">
-                  <Check size={14} className="text-green-500 flex-shrink-0" />
-                  Soporte {plan.support}
-                </li>
-              </ul>
-
-              {isCurrent && plan.plan === 'free' ? (
-                <button
-                  onClick={handleRenew} disabled={renewing}
-                  className="w-full py-2.5 rounded-xl border-2 border-violet-500 text-violet-700 font-semibold text-sm hover:bg-violet-50 transition-colors flex items-center justify-center gap-2"
-                >
-                  <RefreshCw size={14} className={renewing ? 'animate-spin' : ''} />
-                  {renewing ? 'Renovando...' : 'Renovar gratis'}
-                </button>
-              ) : isCurrent ? (
-                <div className="w-full py-2.5 rounded-xl bg-gray-100 text-gray-500 font-semibold text-sm text-center">
-                  Plan activo
+                <div className="my-6">
+                  <span className="text-4xl font-black tracking-tight text-ink-950">
+                    ${Number(plan.price_usd || 0).toFixed(0)}
+                  </span>
+                  <span className="ml-1 text-sm font-semibold text-ink-400">
+                    {Number(plan.price_usd || 0) > 0 ? '/año' : ' gratis'}
+                  </span>
+                  {plan.price_per_qr && (
+                    <p className="mt-1 text-xs font-bold text-limebrand-500">
+                      ${Number(plan.price_per_qr).toFixed(2)} por QR
+                    </p>
+                  )}
                 </div>
-              ) : isPaid ? (
-                <button
-                  onClick={() => handleCheckout(plan.plan)}
-                  disabled={!!checkingOut}
-                  className={`w-full py-2.5 rounded-xl font-semibold text-sm transition-colors
-                    ${isPopular ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-violet-600 hover:bg-violet-700 text-white'}
-                    disabled:opacity-50`}
-                >
-                  {checkingOut === plan.plan ? 'Redirigiendo...' : `Contratar — $${plan.price_usd}/año`}
-                </button>
-              ) : null}
-            </div>
+
+                <ul className="mb-6 grid gap-3 text-sm">
+                  {[
+                    `${plan.qr_quota} QR ${plan.plan === 'free' ? 'por mes' : 'permanentes'}`,
+                    plan.analytics ? 'Analytics incluido' : 'Analytics limitado',
+                    plan.custom_logo ? 'Logo personalizado' : 'Sin logo personalizado',
+                    `Soporte ${plan.support || 'básico'}`,
+                  ].map((item) => (
+                    <li key={item} className="flex items-center gap-2 font-semibold text-ink-600">
+                      <Check size={16} className="text-green-600" /> {item}
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-auto">
+                  {isCurrent && plan.plan === 'free' ? (
+                    <Button variant="secondary" className="w-full" onClick={handleRenew} disabled={renewing}>
+                      <RefreshCw size={16} className={renewing ? 'animate-spin' : ''} />
+                      Renovar gratis
+                    </Button>
+                  ) : isCurrent ? (
+                    <div className="rounded-2xl bg-ink-100 px-4 py-3 text-center text-sm font-black text-ink-500">Plan activo</div>
+                  ) : isPaid ? (
+                    <Button className="w-full" variant={isPopular ? 'lime' : 'primary'} onClick={() => handleCheckout(plan.plan)} disabled={!!checkingOut}>
+                      {checkingOut === plan.plan ? 'Redirigiendo...' : `Contratar ${plan.plan}`}
+                    </Button>
+                  ) : null}
+                </div>
+              </CardBody>
+            </Card>
           )
         })}
       </div>
 
-      {/* Gestionar suscripción (solo planes de pago) */}
       {hasPaidPlan && (
-        <div className="bg-white border border-gray-100 rounded-2xl p-6 mb-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-4">Gestionar suscripción</h2>
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={handleCustomerPortal}
-              disabled={openingPortal}
-              className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white font-medium px-4 py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50"
-            >
-              <ExternalLink size={14} />
-              {openingPortal ? 'Abriendo...' : 'Portal de facturación Stripe'}
-            </button>
-            <p className="text-xs text-gray-400 self-center">
-              Cambia de plan, cancela o descarga facturas directamente en Stripe.
-            </p>
-          </div>
-        </div>
+        <Card className="mt-6">
+          <CardBody>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-lg font-black text-ink-950">Gestionar suscripción</h2>
+                <p className="mt-1 text-sm text-ink-500">Cambia plan, cancela o descarga facturas desde el portal seguro de Stripe.</p>
+              </div>
+              <Button onClick={handleCustomerPortal} disabled={openingPortal}>
+                <ExternalLink size={17} />
+                {openingPortal ? 'Abriendo...' : 'Abrir portal de Stripe'}
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
       )}
 
-      {/* Historial de facturas */}
       {invoices.length > 0 && (
-        <div className="bg-white border border-gray-100 rounded-2xl p-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <FileText size={16} className="text-gray-400" />
-            Historial de pagos
-          </h2>
-          <div className="space-y-2">
-            {invoices.slice(0, 10).map(inv => (
-              <div key={inv.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+        <Card className="mt-6 overflow-hidden">
+          <div className="border-b border-ink-100 p-5">
+            <h2 className="flex items-center gap-2 text-lg font-black text-ink-950">
+              <FileText size={18} /> Historial de pagos
+            </h2>
+          </div>
+          <div className="divide-y divide-ink-100">
+            {invoices.slice(0, 10).map((invoice) => (
+              <div key={invoice.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm text-gray-700">{new Date(inv.date).toLocaleDateString('es-CO')}</p>
-                  <p className="text-xs text-gray-400 capitalize">{inv.status}</p>
+                  <p className="font-bold text-ink-800">{formatDate(invoice.date)}</p>
+                  <p className="text-xs font-semibold uppercase text-ink-400">{invoice.status}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-gray-900">
-                    ${inv.amount_paid.toFixed(2)} {inv.currency}
-                  </span>
-                  {inv.invoice_pdf && (
-                    <a
-                      href={inv.invoice_pdf}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-violet-600 hover:underline"
-                    >
+                  <span className="font-black text-ink-950">{formatCurrency(invoice.amount_paid, invoice.currency || 'USD')}</span>
+                  {invoice.invoice_pdf && (
+                    <a href={invoice.invoice_pdf} target="_blank" rel="noopener noreferrer" className="text-sm font-black text-brand-700 hover:underline">
                       PDF
                     </a>
                   )}
@@ -260,12 +204,12 @@ export default function Billing() {
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       )}
 
-      <p className="text-center text-xs text-gray-400 mt-8">
-        Pagos procesados de forma segura por Stripe · Cancela cuando quieras desde el portal
+      <p className="mt-8 text-center text-xs font-semibold text-ink-400">
+        Pagos procesados por Stripe · No almacenamos tarjetas · Cancela cuando quieras
       </p>
-    </div>
+    </>
   )
 }

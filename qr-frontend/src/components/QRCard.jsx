@@ -1,27 +1,39 @@
-/**
- * QRCard.jsx — Tarjeta de QR en el dashboard
- * Sprint 2: Agrega Link a /qr/:id para ver detalle.
- *           Descarga usa cookies (sin localStorage).
- */
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
-import { ExternalLink, Trash2, Download, BarChart2, Calendar, Eye } from 'lucide-react'
+import {
+  ExternalLink,
+  Trash2,
+  Download,
+  BarChart2,
+  Calendar,
+  Eye,
+  Copy,
+  Power,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { qrAPI } from '../api/client'
+import { formatNumber, getDaysLeft, getShortLink } from '../lib/format'
+import Badge from './ui/Badge'
 
-export default function QRCard({ qr, onDelete, canAnalytics }) {
+export default function QRCard({ qr, onDelete }) {
   const [deleting, setDeleting] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+
+  const shortLink = getShortLink(qr)
+  const daysLeft = getDaysLeft(qr.expires_at)
+  const isActive = qr.status === 'active' || qr.is_active === true
 
   const handleDelete = async (e) => {
-    e.stopPropagation()
     e.preventDefault()
-    if (!confirm('¿Eliminar este QR?')) return
+    e.stopPropagation()
+    if (!confirm('¿Eliminar este QR? Esta acción no se puede deshacer.')) return
+
     setDeleting(true)
     try {
       await qrAPI.delete(qr.id)
       toast.success('QR eliminado')
-      onDelete(qr.id)
+      onDelete?.(qr.id)
     } catch {
       toast.error('Error al eliminar')
     } finally {
@@ -30,77 +42,103 @@ export default function QRCard({ qr, onDelete, canAnalytics }) {
   }
 
   const downloadImage = async (e) => {
-    e.stopPropagation()
     e.preventDefault()
+    e.stopPropagation()
+    setDownloading(true)
     try {
-      await qrAPI.downloadImage(qr.id, qr.short_code)
+      await qrAPI.downloadImage(qr.id, qr.short_code, 1024)
+      toast.success('Descarga iniciada')
     } catch {
       toast.error('Error al descargar')
+    } finally {
+      setDownloading(false)
     }
   }
 
-  const expiresAt = qr.expires_at ? new Date(qr.expires_at) : null
-  const daysLeft = expiresAt
-    ? Math.max(0, Math.ceil((expiresAt - Date.now()) / 86400000))
-    : null
-
-  const shortLink = qr.redirect_url || `${window.location.origin}/r/${qr.short_code}`
+  const copyLink = async (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    try {
+      await navigator.clipboard.writeText(shortLink)
+      toast.success('Enlace copiado')
+    } catch {
+      toast.error('No se pudo copiar')
+    }
+  }
 
   return (
     <Link
       to={`/qr/${qr.id}`}
-      className="block bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex gap-4 hover:border-violet-200 hover:shadow-md transition-all"
+      className="group surface-card block overflow-hidden p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-soft sm:p-5"
     >
-      {/* QR preview */}
-      <div className={`flex-shrink-0 ${qr.status !== 'active' ? 'opacity-40 grayscale' : ''}`}>
-        <QRCodeSVG value={shortLink} size={80} level="M" />
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h3 className="font-semibold text-gray-900 truncate">{qr.title || 'Sin título'}</h3>
-            <p className="text-sm text-gray-400 truncate flex items-center gap-1 mt-0.5">
-              <ExternalLink size={11} />
-              {qr.destination_url}
-            </p>
+      <div className="flex flex-col gap-4 sm:flex-row">
+        <div className="flex items-center gap-4 sm:block">
+          <div className={`rounded-3xl border border-ink-100 bg-white p-3 shadow-sm ${!isActive ? 'opacity-50 grayscale' : ''}`}>
+            <QRCodeSVG value={shortLink} size={96} level="M" />
           </div>
-          <span className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium
-            ${qr.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-            {qr.status === 'active' ? 'Activo' : 'Inactivo'}
-          </span>
+          <div className="sm:hidden">
+            <Badge variant={isActive ? 'green' : 'amber'}>{isActive ? 'Activo' : 'Inactivo'}</Badge>
+          </div>
         </div>
 
-        <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
-          <span className="flex items-center gap-1">
-            <BarChart2 size={12} /> {qr.scan_count} escaneos
-          </span>
-          {daysLeft !== null && (
-            <span className={`flex items-center gap-1 ${daysLeft <= 5 ? 'text-amber-600 font-medium' : ''}`}>
-              <Calendar size={12} />
-              {daysLeft === 0 ? 'Vence hoy' : `${daysLeft}d`}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="truncate text-lg font-black text-ink-950 group-hover:text-brand-700">
+                {qr.title || 'Sin título'}
+              </h3>
+              <p className="mt-1 flex items-center gap-1 truncate text-sm text-ink-400">
+                <ExternalLink size={13} />
+                {qr.destination_url || qr.payload?.url || shortLink}
+              </p>
+            </div>
+            <div className="hidden sm:block">
+              <Badge variant={isActive ? 'green' : 'amber'}>{isActive ? 'Activo' : 'Inactivo'}</Badge>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+            <span className="inline-flex items-center gap-1 rounded-xl bg-ink-50 px-2.5 py-1.5 font-bold text-ink-500">
+              <BarChart2 size={13} /> {formatNumber(qr.scan_count)} escaneos
             </span>
-          )}
-          <span className="font-mono text-gray-300">{qr.short_code}</span>
-        </div>
+            {daysLeft !== null && (
+              <span className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 font-bold ${daysLeft <= 5 ? 'bg-amber-50 text-amber-700' : 'bg-brand-50 text-brand-700'}`}>
+                <Calendar size={13} /> {daysLeft === 0 ? 'Vence hoy' : `${daysLeft} días`}
+              </span>
+            )}
+            <span className="truncate rounded-xl bg-ink-50 px-2.5 py-1.5 font-mono font-bold text-ink-400">
+              {qr.short_code}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-xl bg-ink-50 px-2.5 py-1.5 font-bold text-ink-500">
+              <Power size={13} /> {qr.qr_type || 'url'}
+            </span>
+          </div>
 
-        <div className="flex items-center gap-2 mt-3">
-          <span className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-violet-50 text-violet-700">
-            <Eye size={12} /> Ver detalle
-          </span>
-          <button
-            onClick={downloadImage}
-            className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors"
-          >
-            <Download size={12} /> PNG
-          </button>
-          <button
-            onClick={handleDelete} disabled={deleting}
-            className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors ml-auto"
-          >
-            <Trash2 size={12} /> {deleting ? '...' : 'Eliminar'}
-          </button>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-2xl bg-brand-50 px-3 py-2 text-xs font-bold text-brand-700">
+              <Eye size={13} /> Ver detalle
+            </span>
+            <button
+              onClick={copyLink}
+              className="inline-flex items-center gap-1 rounded-2xl bg-ink-50 px-3 py-2 text-xs font-bold text-ink-600 transition hover:bg-ink-100"
+            >
+              <Copy size={13} /> Copiar
+            </button>
+            <button
+              onClick={downloadImage}
+              disabled={downloading}
+              className="inline-flex items-center gap-1 rounded-2xl bg-ink-50 px-3 py-2 text-xs font-bold text-ink-600 transition hover:bg-ink-100 disabled:opacity-60"
+            >
+              <Download size={13} /> {downloading ? '...' : 'PNG'}
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="ml-auto inline-flex items-center gap-1 rounded-2xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100 disabled:opacity-60"
+            >
+              <Trash2 size={13} /> {deleting ? '...' : 'Eliminar'}
+            </button>
+          </div>
         </div>
       </div>
     </Link>

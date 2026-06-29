@@ -1,83 +1,44 @@
-/**
- * BillingSuccess.jsx — /billing/success
- * Pantalla de éxito después del pago en Stripe.
- */
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { CheckCircle, QrCode, BarChart2 } from 'lucide-react'
+import { CheckCircle, QrCode, BarChart2, ArrowRight } from 'lucide-react'
 import { billingAPI } from '../api/client'
+import Button from '../components/ui/Button'
+import { Card, CardBody } from '../components/ui/Card'
+import { planLabels } from '../lib/format'
 
 export default function BillingSuccess() {
   const [subscription, setSubscription] = useState(null)
 
   useEffect(() => {
-    billingAPI.status()
-      .then(({ data }) => setSubscription(data))
-      .catch(() => {})
+    billingAPI.status().then(({ data }) => setSubscription(data)).catch(() => {})
   }, [])
 
-  const planLabels = {
-    starter: 'Starter',
-    pro: 'Pro',
-    business: 'Business',
-  }
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-white px-4">
-      <div className="max-w-md w-full text-center space-y-6">
+    <div className="mx-auto flex max-w-xl flex-col items-center text-center">
+      <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-green-50 text-green-600 ring-1 ring-green-200">
+        <CheckCircle size={42} />
+      </div>
+      <h1 className="text-4xl font-black tracking-tight text-ink-950">Pago exitoso</h1>
+      <p className="mt-3 text-ink-500">
+        Tu plan <strong className="capitalize text-green-700">{planLabels[subscription?.plan] || subscription?.plan || 'pago'}</strong> está activo.
+      </p>
 
-        <div className="flex justify-center">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
-            <CheckCircle size={40} className="text-green-600" />
-          </div>
-        </div>
-
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">¡Pago exitoso!</h1>
-          {subscription && (
-            <p className="text-gray-500 mt-2">
-              Tu plan <strong className="text-green-600 capitalize">
-                {planLabels[subscription.plan] || subscription.plan}
-              </strong> está activo.
-              Ahora puedes crear hasta <strong>{subscription.qr_quota} QR</strong> permanentes.
-            </p>
-          )}
-        </div>
-
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
-          <p className="text-sm font-medium text-gray-700">¿Qué puedes hacer ahora?</p>
-          <div className="space-y-2 text-sm text-gray-600">
-            <div className="flex items-center gap-2">
-              <QrCode size={16} className="text-violet-600 flex-shrink-0" />
-              Crear hasta {subscription?.qr_quota || '—'} QR dinámicos permanentes
+      <Card className="mt-8 w-full">
+        <CardBody>
+          <p className="mb-4 text-sm font-black text-ink-700">Ahora puedes:</p>
+          <div className="grid gap-3 text-left">
+            <div className="flex items-center gap-3 rounded-2xl bg-brand-50 p-4 text-sm font-bold text-brand-800">
+              <QrCode size={18} /> Crear hasta {subscription?.qr_quota || 'más'} QR permanentes
             </div>
-            {subscription?.features?.analytics && (
-              <div className="flex items-center gap-2">
-                <BarChart2 size={16} className="text-violet-600 flex-shrink-0" />
-                Ver analytics completos de cada escaneo
-              </div>
-            )}
+            <div className="flex items-center gap-3 rounded-2xl bg-brand-50 p-4 text-sm font-bold text-brand-800">
+              <BarChart2 size={18} /> Consultar analytics de tus escaneos
+            </div>
           </div>
-        </div>
+        </CardBody>
+      </Card>
 
-        <div className="flex flex-col sm:flex-row gap-3">
-          <Link
-            to="/create"
-            className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-semibold py-3 rounded-xl transition-colors text-center"
-          >
-            Crear mi primer QR
-          </Link>
-          <Link
-            to="/dashboard"
-            className="flex-1 bg-white border border-gray-200 text-gray-700 font-medium py-3 rounded-xl hover:bg-gray-50 transition-colors text-center"
-          >
-            Ir al dashboard
-          </Link>
-        </div>
-
-        <p className="text-xs text-gray-400">
-          Recibirás un email de confirmación de Stripe con tu factura.
-        </p>
+      <div className="mt-8 flex w-full flex-col gap-3 sm:flex-row">
+        <Button to="/create" className="flex-1">Crear QR <ArrowRight size={17} /></Button>
+        <Button to="/dashboard" variant="secondary" className="flex-1">Ir al dashboard</Button>
       </div>
     </div>
   )

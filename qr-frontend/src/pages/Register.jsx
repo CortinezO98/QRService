@@ -1,14 +1,9 @@
-/**
- * Register.jsx
- * Sprint 1: API_URL sale de VITE_API_URL — nunca hardcodeado.
- * Los botones OAuth apuntan a la ruta relativa /api/v1/auth/google
- * (Nginx hace el proxy al backend correctamente).
- */
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { QrCode } from 'lucide-react'
+import { ArrowRight, Lock, Mail, QrCode, UserRound } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth.jsx'
+import Button from '../components/ui/Button'
 
 export default function Register() {
   const { register } = useAuth()
@@ -16,17 +11,15 @@ export default function Register() {
   const [form, setForm] = useState({ full_name: '', email: '', password: '' })
   const [loading, setLoading] = useState(false)
 
-  const handle = async (e) => {
-    e.preventDefault()
+  const handleSubmit = async (event) => {
+    event.preventDefault()
     setLoading(true)
     try {
       await register(form.email, form.password, form.full_name)
-      toast.success('¡Cuenta creada! Tienes 30 días gratis.')
+      toast.success('Cuenta creada. Tienes 30 días gratis.')
       navigate('/dashboard')
     } catch (err) {
-      const msg = err.response?.data?.detail?.message
-        || err.response?.data?.detail
-        || 'Error al crear la cuenta'
+      const msg = err.response?.data?.detail?.message || err.response?.data?.detail || 'Error al crear la cuenta'
       toast.error(typeof msg === 'string' ? msg : 'Error al crear la cuenta')
     } finally {
       setLoading(false)
@@ -34,101 +27,94 @@ export default function Register() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-violet-50 to-white px-4">
-      <div className="w-full max-w-sm">
+    <div className="app-bg flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="w-full max-w-md">
+        <Link to="/" className="mb-8 inline-flex items-center gap-2 text-sm font-black text-brand-700">
+          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-700 text-white shadow-glow">
+            <QrCode size={22} />
+          </span>
+          QR Service
+        </Link>
 
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-violet-600 rounded-2xl mb-4">
-            <QrCode size={28} className="text-white" />
+        <div className="surface-card p-6 sm:p-8">
+          <div className="mb-7">
+            <div className="eyebrow mb-3">30 días gratis</div>
+            <h1 className="text-3xl font-black tracking-tight text-ink-950">Crear cuenta</h1>
+            <p className="mt-2 text-sm text-ink-500">Empieza sin tarjeta. Crea tu primer QR profesional hoy.</p>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Crear cuenta</h1>
-          <p className="text-gray-500 text-sm mt-1">30 días gratis, sin tarjeta</p>
-        </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-
-          {/* Registro social */}
-          <div className="space-y-3 mb-6">
-            <a
-              href="/api/v1/auth/google"
-              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors font-medium text-gray-700 text-sm"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-              </svg>
-              Registrarse con Google
-            </a>
-
-            <a
-              href="/api/v1/auth/facebook"
-              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-xl hover:bg-blue-50 transition-colors font-medium text-gray-700 text-sm"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="#1877F2">
-                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-              </svg>
-              Registrarse con Facebook
-            </a>
+          <div className="mb-6 grid gap-3">
+            <a href="/api/v1/auth/google" className="btn-secondary w-full">Registrarse con Google</a>
+            <a href="/api/v1/auth/facebook" className="btn-secondary w-full">Registrarse con Facebook</a>
           </div>
 
           <div className="relative mb-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="px-3 bg-white text-gray-400 font-medium">o con tu correo</span>
-            </div>
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-ink-200" /></div>
+            <div className="relative flex justify-center text-xs"><span className="bg-white px-3 font-bold text-ink-400">o con tu correo</span></div>
           </div>
 
-          <form onSubmit={handle} className="space-y-4">
+          <form onSubmit={handleSubmit} className="grid gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre completo</label>
-              <input
-                type="text" required minLength={2}
-                value={form.full_name}
-                onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                placeholder="Jose Córdoba"
-                autoComplete="name"
-              />
+              <label className="label">Nombre completo</label>
+              <div className="relative">
+                <UserRound className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-400" size={17} />
+                <input
+                  type="text"
+                  required
+                  minLength={2}
+                  value={form.full_name}
+                  onChange={(event) => setForm((prev) => ({ ...prev, full_name: event.target.value }))}
+                  className="input-field pl-11"
+                  placeholder="Jose Cortinez"
+                  autoComplete="name"
+                />
+              </div>
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email" required
-                value={form.email}
-                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                placeholder="tu@email.com"
-                autoComplete="email"
-              />
+              <label className="label">Email</label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-400" size={17} />
+                <input
+                  type="email"
+                  required
+                  value={form.email}
+                  onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+                  className="input-field pl-11"
+                  placeholder="tu@email.com"
+                  autoComplete="email"
+                />
+              </div>
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
-              <input
-                type="password" required minLength={8}
-                value={form.password}
-                onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                placeholder="Mínimo 8 caracteres"
-                autoComplete="new-password"
-              />
-              <p className="text-xs text-gray-400 mt-1">Debe incluir mayúscula, número y símbolo</p>
+              <label className="label">Contraseña</label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-400" size={17} />
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={form.password}
+                  onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+                  className="input-field pl-11"
+                  placeholder="Mínimo 8 caracteres"
+                  autoComplete="new-password"
+                />
+              </div>
+              <p className="mt-2 text-xs font-medium text-ink-400">Usa mayúscula, número y símbolo para mayor seguridad.</p>
             </div>
-            <button
-              type="submit" disabled={loading}
-              className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition-colors"
-            >
+
+            <Button type="submit" className="mt-2 w-full" disabled={loading}>
               {loading ? 'Creando cuenta...' : 'Crear cuenta gratis'}
-            </button>
+              {!loading && <ArrowRight size={17} />}
+            </Button>
           </form>
         </div>
 
-        <p className="text-center text-sm text-gray-500 mt-4">
+        <p className="mt-5 text-center text-sm text-ink-500">
           ¿Ya tienes cuenta?{' '}
-          <Link to="/login" className="text-violet-600 font-medium hover:underline">
+          <Link to="/login" className="font-black text-brand-700 hover:underline">
             Iniciar sesión
           </Link>
         </p>

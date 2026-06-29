@@ -1,10 +1,26 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, QrCode, RefreshCw, AlertCircle } from 'lucide-react'
+import {
+  Plus,
+  QrCode,
+  RefreshCw,
+  AlertCircle,
+  BarChart2,
+  Folder,
+  Sparkles,
+  Search,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
-import { qrAPI, billingAPI } from '../api/client'
+import { billingAPI, qrAPI } from '../api/client'
 import QRCard from '../components/QRCard'
-import { useAuth } from '../hooks/useAuth'
+import Button from '../components/ui/Button'
+import EmptyState from '../components/ui/EmptyState'
+import LoadingScreen from '../components/ui/LoadingScreen'
+import PageHeader from '../components/ui/PageHeader'
+import StatCard from '../components/ui/StatCard'
+import Badge from '../components/ui/Badge'
+import { formatNumber, normalizePlan, planLabels } from '../lib/format'
+import { useAuth } from '../hooks/useAuth.jsx'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -12,19 +28,26 @@ export default function Dashboard() {
   const [subscription, setSubscription] = useState(null)
   const [loading, setLoading] = useState(true)
   const [renewing, setRenewing] = useState(false)
+  const [query, setQuery] = useState('')
 
-  useEffect(() => {
-    Promise.all([
-      qrAPI.list(),
-      billingAPI.status(),
-    ]).then(([qrRes, subRes]) => {
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [qrRes, subRes] = await Promise.all([qrAPI.list(), billingAPI.status()])
       setQrs(qrRes.data.items || [])
       setSubscription(subRes.data)
-    }).catch(() => toast.error('Error cargando datos'))
-      .finally(() => setLoading(false))
+    } catch {
+      toast.error('Error cargando datos')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
   }, [])
 
-  const handleDelete = (id) => setQrs(prev => prev.filter(q => q.id !== id))
+  const handleDelete = (id) => setQrs((prev) => prev.filter((qr) => qr.id !== id))
 
   const handleRenew = async () => {
     setRenewing(true)
@@ -32,7 +55,7 @@ export default function Dashboard() {
       await billingAPI.renewFree()
       const { data } = await billingAPI.status()
       setSubscription(data)
-      toast.success('¡Suscripción renovada por 30 días más!')
+      toast.success('Suscripción renovada por 30 días más')
     } catch {
       toast.error('Error al renovar')
     } finally {
@@ -40,104 +63,151 @@ export default function Dashboard() {
     }
   }
 
-  const canCreateMore = subscription && subscription.qr_remaining > 0
-  const canAnalytics = subscription?.features?.analytics
+  const plan = normalizePlan(subscription?.plan)
+  const canCreateMore = Number(subscription?.qr_remaining || 0) > 0
+  const totalScans = useMemo(() => qrs.reduce((sum, qr) => sum + Number(qr.scan_count || 0), 0), [qrs])
+  const activeQrs = useMemo(() => qrs.filter((qr) => qr.status === 'active' || qr.is_active).length, [qrs])
 
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-violet-600" />
-    </div>
-  )
+  const filteredQrs = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return qrs
+    return qrs.filter((qr) =>
+      [qr.title, qr.destination_url, qr.short_code, qr.qr_type]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q))
+    )
+  }, [qrs, query])
+
+  if (loading) return <LoadingScreen label="Cargando dashboard..." />
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Mis QR Codes</h1>
-          <p className="text-gray-500 text-sm mt-0.5">Hola, {user?.full_name} 👋</p>
-        </div>
-        {canCreateMore ? (
-          <Link
-            to="/create"
-            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors"
-          >
-            <Plus size={18} /> Nuevo QR
-          </Link>
-        ) : (
-          <Link
-            to="/billing"
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors"
-          >
-            <Plus size={18} /> Ampliar plan
-          </Link>
-        )}
-      </div>
+    <>
+      <PageHeader
+        eyebrow={<><Sparkles size={13} /> Portal profesional</>}
+        title={`Hola, ${user?.full_name?.split(' ')[0] || 'Jose'} 👋`}
+        description="Administra tus QR dinámicos, mide cada escaneo y cambia destinos sin volver a imprimir."
+        actions={
+          canCreateMore ? (
+            <Button to="/create">
+              <Plus size={17} /> Nuevo QR
+            </Button>
+          ) : (
+            <Button to="/billing" variant="lime">
+              <Plus size={17} /> Ampliar plan
+            </Button>
+          )
+        }
+      />
 
-      {/* Subscription banner */}
       {subscription && (
-        <div className={`rounded-2xl p-4 mb-6 flex items-center justify-between
-          ${subscription.days_remaining <= 5 && subscription.plan === 'free'
-            ? 'bg-amber-50 border border-amber-200'
-            : 'bg-violet-50 border border-violet-100'}`}>
-          <div className="flex items-center gap-3">
-            {subscription.days_remaining <= 5 && subscription.plan === 'free' && (
-              <AlertCircle size={20} className="text-amber-500 flex-shrink-0" />
-            )}
-            <div>
-              <p className="font-semibold text-gray-900 capitalize">
-                Plan {subscription.plan} — {subscription.days_remaining} días restantes
-              </p>
-              <p className="text-sm text-gray-500">
-                {subscription.qr_used}/{subscription.qr_quota === null ? '∞' : subscription.qr_quota} QR usados
-              </p>
+        <section className="mb-6 grid gap-4 lg:grid-cols-[1.35fr_.65fr]">
+          <div className="surface-card overflow-hidden">
+            <div className="relative p-5 sm:p-6">
+              <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-brand-100 blur-2xl" />
+              <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-700 text-white shadow-glow">
+                    <QrCode size={24} />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-lg font-black text-ink-950">
+                        Plan {planLabels[plan] || plan}
+                      </h2>
+                      <Badge variant={subscription.days_remaining <= 5 && plan === 'free' ? 'amber' : 'brand'}>
+                        {subscription.days_remaining} días restantes
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-sm text-ink-500">
+                      {subscription.qr_used}/{subscription.qr_quota ?? '∞'} QR usados · {subscription.qr_remaining ?? 0} disponibles
+                    </p>
+
+                    <div className="mt-4 h-3 overflow-hidden rounded-full bg-ink-100">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-brand-700 to-brand-400"
+                        style={{
+                          width: `${Math.min(100, ((subscription.qr_used || 0) / Math.max(1, subscription.qr_quota || 1)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {subscription.can_renew_free && (
+                    <Button variant="secondary" onClick={handleRenew} disabled={renewing}>
+                      <RefreshCw size={15} className={renewing ? 'animate-spin' : ''} />
+                      Renovar gratis
+                    </Button>
+                  )}
+                  <Button to="/billing" variant="secondary">Ver planes</Button>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="flex gap-2">
-            {subscription.can_renew_free && (
-              <button
-                onClick={handleRenew} disabled={renewing}
-                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 font-medium transition-colors"
-              >
-                <RefreshCw size={14} className={renewing ? 'animate-spin' : ''} />
-                Renovar gratis
-              </button>
-            )}
-            <Link
-              to="/billing"
-              className="text-sm px-3 py-1.5 rounded-lg bg-violet-600 text-white font-medium hover:bg-violet-700 transition-colors"
-            >
-              Ver planes
-            </Link>
-          </div>
-        </div>
+
+          {subscription.days_remaining <= 5 && plan === 'free' && (
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 shrink-0 text-amber-600" size={20} />
+                <div>
+                  <h3 className="font-black text-amber-900">Tu plan está por vencer</h3>
+                  <p className="mt-1 text-sm leading-6 text-amber-700">
+                    Renueva gratis o mejora tu plan para mantener tus QR activos sin interrupciones.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
       )}
 
-      {/* QR List */}
-      {qrs.length === 0 ? (
-        <div className="text-center py-20">
-          <QrCode size={48} className="text-gray-300 mx-auto mb-4" />
-          <h3 className="text-gray-500 font-medium">Aún no tienes QR codes</h3>
-          <p className="text-gray-400 text-sm mt-1">Crea tu primer QR gratis</p>
-          <Link
-            to="/create"
-            className="inline-flex items-center gap-2 mt-4 bg-violet-600 text-white font-semibold px-4 py-2.5 rounded-xl hover:bg-violet-700 transition-colors"
-          >
-            <Plus size={18} /> Crear QR
-          </Link>
+      <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={QrCode} label="QR totales" value={qrs.length} hint={`${activeQrs} activos`} />
+        <StatCard icon={BarChart2} label="Escaneos" value={totalScans} hint="Acumulado histórico" tone="green" />
+        <StatCard icon={Folder} label="Campañas" value="Organiza" hint="Disponible en planes de pago" tone="slate" />
+        <StatCard icon={Sparkles} label="Conversión" value={qrs.length ? `${Math.round(totalScans / Math.max(1, qrs.length))}` : '0'} hint="Escaneos promedio por QR" tone="amber" />
+      </section>
+
+      <section className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-xl font-black text-ink-950">Mis códigos QR</h2>
+          <p className="text-sm text-ink-500">{formatNumber(filteredQrs.length)} resultados</p>
         </div>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-400" size={17} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar por título, enlace o código..."
+            className="input-field pl-11"
+          />
+        </div>
+      </section>
+
+      {qrs.length === 0 ? (
+        <EmptyState
+          icon={QrCode}
+          title="Aún no tienes QR"
+          description="Crea tu primer QR dinámico gratis. Podrás cambiar el destino después sin modificar el código impreso."
+          actionLabel="Crear mi primer QR"
+          actionTo="/create"
+        />
+      ) : filteredQrs.length === 0 ? (
+        <EmptyState
+          icon={Search}
+          title="Sin resultados"
+          description="Prueba con otro título, short code o URL de destino."
+          actionLabel="Limpiar búsqueda"
+          actionOnClick={() => setQuery('')}
+        />
       ) : (
-        <div className="space-y-3">
-          {qrs.map(qr => (
-            <QRCard
-              key={qr.id}
-              qr={qr}
-              onDelete={handleDelete}
-              canAnalytics={canAnalytics}
-            />
+        <div className="grid gap-4">
+          {filteredQrs.map((qr) => (
+            <QRCard key={qr.id} qr={qr} onDelete={handleDelete} />
           ))}
         </div>
       )}
-    </div>
+    </>
   )
 }

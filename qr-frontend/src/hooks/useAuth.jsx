@@ -1,10 +1,4 @@
-/**
- * useAuth — Context de autenticación
- * OWASP A02: Sin localStorage para tokens.
- * El estado de sesión se mantiene en React state.
- * Las cookies HttpOnly las maneja el navegador automáticamente.
- */
-import { useState, useEffect, createContext, useContext } from 'react'
+import { useState, useEffect, createContext, useContext, useMemo } from 'react'
 import { authAPI } from '../api/client'
 
 const AuthContext = createContext(null)
@@ -14,36 +8,42 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Intentar restaurar sesión via /auth/me
-    // Si hay cookie válida, el backend devuelve el usuario
+    let mounted = true
+
     authAPI.me()
-      .then(({ data }) => setUser(data))
-      .catch(() => setUser(null))  // Sin sesión activa — normal
-      .finally(() => setLoading(false))
+      .then(({ data }) => {
+        if (mounted) setUser(data)
+      })
+      .catch(() => {
+        if (mounted) setUser(null)
+      })
+      .finally(() => {
+        if (mounted) setLoading(false)
+      })
+
+    return () => {
+      mounted = false
+    }
   }, [])
 
   const login = async (email, password) => {
-    const { data: userData } = await authAPI.login({ email, password })
-    // El backend setea las cookies HttpOnly en la response
-    // Aquí solo guardamos los datos del usuario en state
-    setUser(userData)
-    return userData
+    const { data } = await authAPI.login({ email, password })
+    setUser(data)
+    return data
   }
 
   const register = async (email, password, full_name) => {
-    const { data: userData } = await authAPI.register({ email, password, full_name })
-    setUser(userData)
-    return userData
+    const { data } = await authAPI.register({ email, password, full_name })
+    setUser(data)
+    return data
   }
 
   const logout = async () => {
     try {
-      // El backend revoca el refresh token y elimina las cookies
       await authAPI.logout()
-    } catch {
-      // Si falla (sin red, etc.) igual limpiamos el estado local
+    } finally {
+      setUser(null)
     }
-    setUser(null)
   }
 
   const refreshUser = async () => {
@@ -57,11 +57,12 @@ export function AuthProvider({ children }) {
     }
   }
 
-  return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, loading, login, register, logout, refreshUser, setUser }),
+    [user, loading]
   )
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export const useAuth = () => useContext(AuthContext)

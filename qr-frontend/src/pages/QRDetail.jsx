@@ -1,52 +1,49 @@
-/**
- * QRDetail.jsx — /qr/:id
- * Sprint 2: Página de detalle completa con:
- * - Preview grande del QR
- * - Edición de título y destino inline
- * - Descarga PNG (múltiples tamaños)
- * - Copiar short link
- * - Analytics básicos (solo planes de pago)
- * - Toggle activo/inactivo
- * - Estado de vencimiento
- */
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import {
-  ArrowLeft, Copy, Download, Edit2, Check, X,
-  BarChart2, ExternalLink, Calendar, Trash2,
-  ToggleLeft, ToggleRight, QrCode,
+  BarChart2,
+  Calendar,
+  Check,
+  Copy,
+  Download,
+  Edit2,
+  ExternalLink,
+  Power,
+  QrCode,
+  Trash2,
+  X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { qrAPI, billingAPI } from '../api/client'
-import { useAuth } from '../hooks/useAuth.jsx'
+import { billingAPI, qrAPI } from '../api/client'
+import Button from '../components/ui/Button'
+import Badge from '../components/ui/Badge'
+import LoadingScreen from '../components/ui/LoadingScreen'
+import PageHeader from '../components/ui/PageHeader'
+import { Card, CardBody } from '../components/ui/Card'
+import StatCard from '../components/ui/StatCard'
+import { formatNumber, getDaysLeft, getShortLink } from '../lib/format'
 
 export default function QRDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { user } = useAuth()
-
   const [qr, setQr] = useState(null)
   const [subscription, setSubscription] = useState(null)
-  const [loading, setLoading] = useState(true)
   const [analytics, setAnalytics] = useState(null)
-  const [loadingAnalytics, setLoadingAnalytics] = useState(false)
-
-  // Edición inline
-  const [editingTitle, setEditingTitle] = useState(false)
-  const [editingUrl, setEditingUrl] = useState(false)
-  const [titleDraft, setTitleDraft] = useState('')
-  const [urlDraft, setUrlDraft] = useState('')
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-
-  const [deleting, setDeleting] = useState(false)
-  const [toggling, setToggling] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [draft, setDraft] = useState({ title: '', destination_url: '' })
 
   useEffect(() => {
     Promise.all([qrAPI.get(id), billingAPI.status()])
       .then(([qrRes, subRes]) => {
         setQr(qrRes.data)
         setSubscription(subRes.data)
+        setDraft({
+          title: qrRes.data.title || '',
+          destination_url: qrRes.data.destination_url || '',
+        })
       })
       .catch(() => {
         toast.error('No se pudo cargar el QR')
@@ -55,388 +52,253 @@ export default function QRDetail() {
       .finally(() => setLoading(false))
   }, [id])
 
-  const canAnalytics = subscription?.features?.analytics
-
-  const loadAnalytics = async () => {
-    if (!canAnalytics || analytics) return
-    setLoadingAnalytics(true)
-    try {
-      const { data } = await qrAPI.analytics(id)
-      setAnalytics(data)
-    } catch {
-      toast.error('Error cargando analytics')
-    } finally {
-      setLoadingAnalytics(false)
-    }
-  }
-
   useEffect(() => {
-    if (qr && canAnalytics) loadAnalytics()
-  }, [qr, canAnalytics])
+    if (!qr || !subscription?.features?.analytics) return
+    qrAPI.analytics(id)
+      .then(({ data }) => setAnalytics(data))
+      .catch(() => {})
+  }, [qr, subscription, id])
 
-  // ── Copiar link ─────────────────────────────────────────────
-  const copyLink = () => {
-    const url = qr?.redirect_url || `${window.location.origin}/r/${qr?.short_code}`
-    navigator.clipboard.writeText(url)
-    toast.success('Enlace copiado')
-  }
+  if (loading) return <LoadingScreen label="Cargando detalle..." />
+  if (!qr) return null
 
-  // ── Guardar título ──────────────────────────────────────────
-  const saveTitle = async () => {
-    if (!titleDraft.trim()) return setEditingTitle(false)
-    setSaving(true)
+  const isActive = qr.status === 'active' || qr.is_active === true
+  const daysLeft = getDaysLeft(qr.expires_at)
+  const shortLink = getShortLink(qr)
+
+  const copyLink = async () => {
     try {
-      const { data } = await qrAPI.update(id, { title: titleDraft.trim() })
-      setQr(data)
-      setEditingTitle(false)
-      toast.success('Título actualizado')
+      await navigator.clipboard.writeText(shortLink)
+      toast.success('Enlace copiado')
     } catch {
-      toast.error('Error al guardar')
-    } finally {
-      setSaving(false)
+      toast.error('No se pudo copiar')
     }
   }
 
-  // ── Guardar URL destino ─────────────────────────────────────
-  const saveUrl = async () => {
-    if (!urlDraft.trim()) return setEditingUrl(false)
+  const saveField = async (field) => {
     setSaving(true)
     try {
-      const { data } = await qrAPI.update(id, { destination_url: urlDraft.trim() })
+      const { data } = await qrAPI.update(id, { [field]: draft[field] })
       setQr(data)
-      setEditingUrl(false)
-      toast.success('Destino actualizado — el QR físico sigue funcionando')
+      setEditing(null)
+      toast.success(field === 'destination_url' ? 'Destino actualizado' : 'Título actualizado')
     } catch (err) {
-      const msg = err.response?.data?.detail?.message || 'URL inválida'
-      toast.error(msg)
+      toast.error(err.response?.data?.detail?.message || 'Error al guardar')
     } finally {
       setSaving(false)
     }
   }
 
-  // ── Toggle activo/inactivo ──────────────────────────────────
   const toggleStatus = async () => {
-    setToggling(true)
-    const newStatus = qr.status === 'active' ? 'inactive' : 'active'
+    setSaving(true)
     try {
-      const { data } = await qrAPI.update(id, { status: newStatus })
+      const { data } = await qrAPI.update(id, { status: isActive ? 'inactive' : 'active' })
       setQr(data)
-      toast.success(newStatus === 'active' ? 'QR activado' : 'QR desactivado')
+      toast.success(isActive ? 'QR desactivado' : 'QR activado')
     } catch {
       toast.error('Error al cambiar estado')
     } finally {
-      setToggling(false)
+      setSaving(false)
     }
   }
 
-  // ── Eliminar ────────────────────────────────────────────────
   const handleDelete = async () => {
     if (!confirm('¿Eliminar este QR permanentemente?')) return
-    setDeleting(true)
+    setSaving(true)
     try {
       await qrAPI.delete(id)
       toast.success('QR eliminado')
       navigate('/dashboard')
     } catch {
       toast.error('Error al eliminar')
-      setDeleting(false)
+      setSaving(false)
     }
   }
 
-  // ── Descargar imagen ────────────────────────────────────────
-  const download = async (size = 512) => {
+  const download = async (size) => {
     try {
       await qrAPI.downloadImage(id, qr.short_code, size)
+      toast.success('Descarga iniciada')
     } catch {
       toast.error('Error al descargar')
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-violet-600" />
-      </div>
-    )
-  }
-
-  if (!qr) return null
-
-  const expiresAt = qr.expires_at ? new Date(qr.expires_at) : null
-  const daysLeft = expiresAt
-    ? Math.max(0, Math.ceil((expiresAt - Date.now()) / 86400000))
-    : null
-  const isActive = qr.status === 'active'
-  const shortLink = qr.redirect_url || `${window.location.origin}/r/${qr.short_code}`
-
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <>
+      <PageHeader
+        backTo="/dashboard"
+        backLabel="Dashboard"
+        eyebrow={<><QrCode size={13} /> Detalle del QR</>}
+        title={qr.title || 'QR sin título'}
+        description="Edita el destino sin cambiar el código impreso, descarga el QR y revisa su rendimiento."
+        actions={
+          <Button variant={isActive ? 'danger' : 'secondary'} onClick={toggleStatus} disabled={saving}>
+            <Power size={16} /> {isActive ? 'Desactivar' : 'Activar'}
+          </Button>
+        }
+      />
 
-      {/* Back */}
-      <Link
-        to="/dashboard"
-        className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 mb-6 transition-colors"
-      >
-        <ArrowLeft size={16} /> Volver al dashboard
-      </Link>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-
-        {/* ── Columna izquierda: QR visual ─────────────────── */}
-        <div className="space-y-4">
-          <div className={`bg-white rounded-2xl border p-8 flex items-center justify-center
-            ${!isActive ? 'opacity-50 grayscale' : 'border-gray-200'}`}>
-            <QRCodeSVG
-              value={shortLink}
-              size={240}
-              fgColor={qr.style_config?.foreground_color || '#000000'}
-              bgColor={qr.style_config?.background_color || '#ffffff'}
-              level="H"
-            />
-          </div>
-
-          {!isActive && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center text-sm text-amber-700">
-              Este QR está <strong>inactivo</strong> y no redirige escaneos.
-            </div>
-          )}
-
-          {daysLeft !== null && (
-            <div className={`rounded-xl p-3 text-center text-sm flex items-center justify-center gap-2
-              ${daysLeft <= 5 ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-violet-50 text-violet-700'}`}>
-              <Calendar size={14} />
-              {daysLeft === 0 ? 'Vence hoy' : `Vence en ${daysLeft} días`}
-            </div>
-          )}
-
-          {/* Short link */}
-          <div className="bg-gray-50 rounded-xl p-3 flex items-center justify-between gap-2">
-            <span className="text-xs text-gray-500 font-mono truncate">{shortLink}</span>
-            <button
-              onClick={copyLink}
-              className="flex-shrink-0 p-1.5 rounded-lg hover:bg-gray-200 transition-colors"
-              title="Copiar enlace"
-            >
-              <Copy size={14} className="text-gray-600" />
-            </button>
-          </div>
-
-          {/* Descargas */}
-          <div>
-            <p className="text-xs text-gray-500 mb-2 font-medium">Descargar PNG</p>
-            <div className="flex gap-2 flex-wrap">
-              {[512, 1024, 2048].map(size => (
-                <button
-                  key={size}
-                  onClick={() => download(size)}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
-                >
-                  <Download size={12} /> {size}px
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Estadísticas rápidas */}
-          <div className="bg-white rounded-xl border border-gray-100 p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500">Total escaneos</span>
-              <span className="text-2xl font-bold text-gray-900">{qr.scan_count || 0}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Columna derecha: Info y edición ──────────────── */}
-        <div className="space-y-5">
-
-          {/* Estado */}
-          <div className="flex items-center justify-between bg-white border border-gray-100 rounded-xl p-4">
-            <div>
-              <p className="text-sm font-medium text-gray-700">Estado del QR</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {isActive ? 'Activo — redirige correctamente' : 'Inactivo — no redirige'}
-              </p>
-            </div>
-            <button
-              onClick={toggleStatus}
-              disabled={toggling}
-              className="focus:outline-none disabled:opacity-50"
-              title={isActive ? 'Desactivar' : 'Activar'}
-            >
-              {isActive
-                ? <ToggleRight size={36} className="text-violet-600" />
-                : <ToggleLeft size={36} className="text-gray-400" />
-              }
-            </button>
-          </div>
-
-          {/* Título */}
-          <div className="bg-white border border-gray-100 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Título</p>
-              {!editingTitle && (
-                <button
-                  onClick={() => { setTitleDraft(qr.title || ''); setEditingTitle(true) }}
-                  className="p-1 rounded hover:bg-gray-100"
-                >
-                  <Edit2 size={13} className="text-gray-400" />
-                </button>
-              )}
-            </div>
-            {editingTitle ? (
-              <div className="flex gap-2">
-                <input
-                  autoFocus
-                  value={titleDraft}
-                  onChange={e => setTitleDraft(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && saveTitle()}
-                  className="flex-1 text-sm border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  placeholder="Título del QR"
-                  maxLength={255}
+      <div className="grid gap-6 xl:grid-cols-[390px_minmax(0,1fr)]">
+        <aside className="grid gap-4 xl:sticky xl:top-24 xl:self-start">
+          <Card>
+            <CardBody>
+              <div className={`mx-auto flex aspect-square max-w-[320px] items-center justify-center rounded-[2rem] border border-ink-100 bg-white p-6 shadow-card ${!isActive ? 'opacity-50 grayscale' : ''}`}>
+                <QRCodeSVG
+                  value={shortLink}
+                  size={250}
+                  fgColor={qr.style_config?.foreground_color || '#111827'}
+                  bgColor={qr.style_config?.background_color || '#ffffff'}
+                  level="H"
                 />
-                <button onClick={saveTitle} disabled={saving} className="p-1.5 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50">
-                  <Check size={13} />
-                </button>
-                <button onClick={() => setEditingTitle(false)} className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200">
-                  <X size={13} />
-                </button>
               </div>
-            ) : (
-              <p className="text-sm font-medium text-gray-900">{qr.title || 'Sin título'}</p>
-            )}
+
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                <Badge variant={isActive ? 'green' : 'amber'}>{isActive ? 'Activo' : 'Inactivo'}</Badge>
+                {daysLeft !== null && <Badge variant={daysLeft <= 5 ? 'red' : 'brand'}>{daysLeft === 0 ? 'Vence hoy' : `${daysLeft} días`}</Badge>}
+                <Badge>{qr.qr_type || 'url'}</Badge>
+              </div>
+
+              <div className="mt-5 rounded-2xl bg-ink-50 p-3">
+                <p className="break-all font-mono text-xs font-semibold text-ink-500">{shortLink}</p>
+                <Button variant="secondary" size="sm" className="mt-3 w-full" onClick={copyLink}>
+                  <Copy size={15} /> Copiar enlace
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardBody>
+              <p className="mb-3 text-sm font-black text-ink-950">Descargar PNG</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[512, 1024, 2048].map((size) => (
+                  <Button key={size} variant="secondary" size="sm" onClick={() => download(size)}>
+                    <Download size={14} /> {size}
+                  </Button>
+                ))}
+              </div>
+            </CardBody>
+          </Card>
+        </aside>
+
+        <section className="grid gap-5">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <StatCard icon={BarChart2} label="Escaneos" value={qr.scan_count || 0} tone="green" />
+            <StatCard icon={Calendar} label="Vigencia" value={daysLeft ?? '∞'} hint={daysLeft === null ? 'Sin vencimiento' : 'días restantes'} tone="brand" />
+            <StatCard icon={QrCode} label="Short code" value={qr.short_code} tone="slate" />
           </div>
 
-          {/* URL destino — función clave del producto */}
-          <div className="bg-white border border-gray-100 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">
-                Destino del QR
-              </p>
-              {!editingUrl && (
-                <button
-                  onClick={() => { setUrlDraft(qr.destination_url || ''); setEditingUrl(true) }}
-                  className="p-1 rounded hover:bg-gray-100"
-                >
-                  <Edit2 size={13} className="text-gray-400" />
-                </button>
-              )}
-            </div>
-            {editingUrl ? (
-              <div className="space-y-2">
-                <input
-                  autoFocus
-                  type="url"
-                  value={urlDraft}
-                  onChange={e => setUrlDraft(e.target.value)}
-                  className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  placeholder="https://nuevo-destino.com"
-                />
-                <p className="text-xs text-violet-600">
-                  El código QR impreso sigue funcionando automáticamente.
-                </p>
-                <div className="flex gap-2">
-                  <button onClick={saveUrl} disabled={saving} className="flex-1 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-medium hover:bg-violet-700 disabled:opacity-50">
-                    {saving ? 'Guardando...' : 'Guardar destino'}
-                  </button>
-                  <button onClick={() => setEditingUrl(false)} className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-xs hover:bg-gray-200">
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <a
-                href={qr.destination_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-violet-600 hover:underline flex items-center gap-1.5 break-all"
-              >
-                <ExternalLink size={12} className="flex-shrink-0" />
-                {qr.destination_url}
-              </a>
-            )}
-          </div>
+          <Card>
+            <CardBody className="grid gap-5">
+              <EditableField
+                label="Título"
+                value={qr.title || 'Sin título'}
+                editing={editing === 'title'}
+                draft={draft.title}
+                onEdit={() => setEditing('title')}
+                onChange={(value) => setDraft((prev) => ({ ...prev, title: value }))}
+                onCancel={() => setEditing(null)}
+                onSave={() => saveField('title')}
+                saving={saving}
+              />
 
-          {/* Short code / tipo */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-gray-50 rounded-xl p-3">
-              <p className="text-xs text-gray-400 mb-1">Short code</p>
-              <p className="text-sm font-mono font-medium">{qr.short_code}</p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-3">
-              <p className="text-xs text-gray-400 mb-1">Tipo</p>
-              <p className="text-sm font-medium capitalize">{qr.qr_type || 'url'}</p>
-            </div>
-          </div>
+              <EditableField
+                label="Destino del QR"
+                value={qr.destination_url}
+                link
+                editing={editing === 'destination_url'}
+                draft={draft.destination_url}
+                onEdit={() => setEditing('destination_url')}
+                onChange={(value) => setDraft((prev) => ({ ...prev, destination_url: value }))}
+                onCancel={() => setEditing(null)}
+                onSave={() => saveField('destination_url')}
+                saving={saving}
+                helper="El código QR físico seguirá siendo el mismo; solo cambia el destino."
+              />
+            </CardBody>
+          </Card>
 
-          {/* Analytics */}
-          {canAnalytics ? (
-            <div className="bg-white border border-gray-100 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <BarChart2 size={16} className="text-violet-600" />
-                <p className="text-sm font-medium text-gray-700">Analytics (últimos 30 días)</p>
-              </div>
-              {loadingAnalytics ? (
-                <div className="flex justify-center py-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-600" />
+          {subscription?.features?.analytics ? (
+            <Card>
+              <CardBody>
+                <div className="mb-5 flex items-center gap-2">
+                  <BarChart2 size={18} className="text-brand-700" />
+                  <h2 className="text-lg font-black text-ink-950">Analytics</h2>
                 </div>
-              ) : analytics ? (
-                <div className="space-y-3">
-                  {/* Gráfico de barras simple */}
-                  {analytics.daily_breakdown?.slice(0, 7).reverse().map(d => (
-                    <div key={d.date} className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400 w-20 text-right">{d.date.slice(5)}</span>
-                      <div className="flex-1 bg-gray-100 rounded-full h-2">
-                        <div
-                          className="bg-violet-500 h-2 rounded-full transition-all"
-                          style={{
-                            width: analytics.total_scans > 0
-                              ? `${Math.max(4, (d.scans / Math.max(...(analytics.daily_breakdown?.map(x => x.scans) || [1]))) * 100)}%`
-                              : '4%'
-                          }}
-                        />
-                      </div>
-                      <span className="text-xs text-gray-500 w-6">{d.scans}</span>
-                    </div>
-                  ))}
-                  {/* Por dispositivo */}
-                  {analytics.by_device?.length > 0 && (
-                    <div className="pt-2 border-t border-gray-100">
-                      <p className="text-xs text-gray-400 mb-2">Por dispositivo</p>
-                      <div className="flex flex-wrap gap-2">
-                        {analytics.by_device.map(d => (
-                          <span key={d.device} className="text-xs bg-gray-50 text-gray-600 px-2 py-0.5 rounded-full">
-                            {d.device}: {d.count}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </div>
+
+                {analytics?.daily_breakdown?.length ? (
+                  <div className="grid gap-3">
+                    {analytics.daily_breakdown.slice(0, 10).reverse().map((item) => {
+                      const max = Math.max(...analytics.daily_breakdown.map((x) => x.scans), 1)
+                      return (
+                        <div key={item.date} className="grid grid-cols-[70px_1fr_44px] items-center gap-3">
+                          <span className="text-right text-xs font-bold text-ink-400">{item.date.slice(5)}</span>
+                          <div className="h-3 overflow-hidden rounded-full bg-ink-100">
+                            <div className="h-full rounded-full bg-brand-600" style={{ width: `${Math.max(4, (item.scans / max) * 100)}%` }} />
+                          </div>
+                          <span className="text-xs font-black text-ink-700">{formatNumber(item.scans)}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="rounded-2xl bg-ink-50 p-5 text-center text-sm font-semibold text-ink-500">
+                    Aún no hay datos suficientes de escaneo.
+                  </p>
+                )}
+              </CardBody>
+            </Card>
           ) : (
-            <div className="bg-gray-50 border border-dashed border-gray-200 rounded-xl p-4 text-center">
-              <BarChart2 size={20} className="text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">Analytics disponibles en planes de pago</p>
-              <Link to="/billing" className="text-xs text-violet-600 font-medium hover:underline mt-1 inline-block">
-                Ver planes →
-              </Link>
-            </div>
+            <Card>
+              <CardBody className="text-center">
+                <BarChart2 className="mx-auto text-ink-300" size={34} />
+                <h3 className="mt-3 font-black text-ink-950">Analytics disponibles en planes de pago</h3>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-500">
+                  Mejora tu plan para ver escaneos por fecha, dispositivo y más.
+                </p>
+                <Button to="/billing" className="mt-5">Ver planes</Button>
+              </CardBody>
+            </Card>
           )}
 
-          {/* Eliminar */}
-          <div className="pt-2">
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="flex items-center gap-2 text-sm text-red-500 hover:text-red-700 transition-colors disabled:opacity-50"
-            >
-              <Trash2 size={14} />
-              {deleting ? 'Eliminando...' : 'Eliminar este QR'}
-            </button>
+          <Button variant="danger" onClick={handleDelete} disabled={saving} className="justify-self-start">
+            <Trash2 size={16} /> Eliminar este QR
+          </Button>
+        </section>
+      </div>
+    </>
+  )
+}
+
+function EditableField({ label, value, link, editing, draft, onEdit, onChange, onCancel, onSave, saving, helper }) {
+  return (
+    <div className="rounded-3xl border border-ink-100 bg-white p-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-xs font-black uppercase tracking-[0.16em] text-ink-400">{label}</p>
+        {!editing && (
+          <button onClick={onEdit} className="rounded-xl p-2 text-ink-400 hover:bg-ink-100 hover:text-brand-700">
+            <Edit2 size={15} />
+          </button>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="grid gap-3">
+          <input autoFocus type={link ? 'url' : 'text'} value={draft || ''} onChange={(event) => onChange(event.target.value)} className="input-field" />
+          {helper && <p className="text-xs font-semibold text-brand-700">{helper}</p>}
+          <div className="flex gap-2">
+            <Button size="sm" onClick={onSave} disabled={saving}><Check size={14} /> Guardar</Button>
+            <Button size="sm" variant="secondary" onClick={onCancel}><X size={14} /> Cancelar</Button>
           </div>
         </div>
-      </div>
+      ) : link ? (
+        <a href={value} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 break-all text-sm font-bold text-brand-700 hover:underline">
+          <ExternalLink size={15} /> {value}
+        </a>
+      ) : (
+        <p className="text-base font-bold text-ink-900">{value}</p>
+      )}
     </div>
   )
 }

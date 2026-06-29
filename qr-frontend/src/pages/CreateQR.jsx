@@ -1,492 +1,458 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
-import { ArrowLeft, Search, ChevronDown, ChevronUp } from 'lucide-react'
+import {
+  ArrowRight,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Link as LinkIcon,
+  Mail,
+  MapPin,
+  MessageCircle,
+  Phone,
+  Search,
+  Type,
+  UserRound,
+  Wifi,
+  Palette,
+  Sparkles,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { qrAPI } from '../api/client'
+import Button from '../components/ui/Button'
+import PageHeader from '../components/ui/PageHeader'
+import { Card, CardBody } from '../components/ui/Card'
+import Badge from '../components/ui/Badge'
+import { cx } from '../lib/format'
 
-// ── Tipos con iconos y categorías ─────────────────────────────
 const QR_TYPES = [
-  // Básico
-  { type: "url",          label: "Enlace / URL",        icon: "🔗", category: "Básico",
-    fields: [{ name: "url", label: "URL", type: "url", placeholder: "https://tu-sitio.com", required: true }] },
-  { type: "text",         label: "Texto",               icon: "📝", category: "Básico",
-    fields: [{ name: "text", label: "Texto", type: "textarea", placeholder: "Escribe tu texto aquí", required: true }] },
-  { type: "whatsapp",     label: "WhatsApp",            icon: "💬", category: "Básico",
+  {
+    type: 'url',
+    label: 'Enlace / URL',
+    icon: LinkIcon,
+    emoji: '🔗',
+    category: 'Esenciales',
+    description: 'Web, landing, menú digital o documento público.',
+    fields: [{ name: 'url', label: 'URL', type: 'url', placeholder: 'https://tu-sitio.com', required: true }],
+  },
+  {
+    type: 'whatsapp',
+    label: 'WhatsApp',
+    icon: MessageCircle,
+    emoji: '💬',
+    category: 'Esenciales',
+    description: 'Abre una conversación con mensaje predeterminado.',
     fields: [
-      { name: "phone",   label: "Número (con código país)", type: "tel", placeholder: "+57 300 123 4567", required: true },
-      { name: "message", label: "Mensaje predeterminado",   type: "textarea", placeholder: "Hola, me contacto desde tu QR" },
-    ] },
-  { type: "email",        label: "Correo electrónico",  icon: "📧", category: "Básico",
+      { name: 'phone', label: 'Número con código país', type: 'tel', placeholder: '+57 300 123 4567', required: true },
+      { name: 'message', label: 'Mensaje predeterminado', type: 'textarea', placeholder: 'Hola, me contacto desde tu QR' },
+    ],
+  },
+  {
+    type: 'vcard',
+    label: 'vCard / contacto',
+    icon: UserRound,
+    emoji: '👤',
+    category: 'Negocios',
+    description: 'Comparte datos de contacto profesionales.',
     fields: [
-      { name: "email",   label: "Email",   type: "email", placeholder: "contacto@empresa.com", required: true },
-      { name: "subject", label: "Asunto",  type: "text",  placeholder: "Hola desde tu QR" },
-      { name: "body",    label: "Mensaje", type: "textarea" },
-    ] },
-  { type: "phone",        label: "Llamada telefónica",  icon: "📞", category: "Básico",
-    fields: [{ name: "phone", label: "Número", type: "tel", placeholder: "+57 300 123 4567", required: true }] },
-  { type: "sms",          label: "SMS",                 icon: "✉️", category: "Básico",
+      { name: 'first_name', label: 'Nombre', type: 'text', required: true },
+      { name: 'last_name', label: 'Apellido', type: 'text' },
+      { name: 'org', label: 'Empresa', type: 'text' },
+      { name: 'title', label: 'Cargo', type: 'text' },
+      { name: 'phone', label: 'Teléfono', type: 'tel' },
+      { name: 'email', label: 'Email', type: 'email' },
+      { name: 'website', label: 'Sitio web', type: 'url' },
+    ],
+  },
+  {
+    type: 'maps',
+    label: 'Google Maps',
+    icon: MapPin,
+    emoji: '📍',
+    category: 'Negocios',
+    description: 'Ubicación de tienda, evento u oficina.',
+    fields: [{ name: 'address', label: 'Dirección o lugar', type: 'text', placeholder: 'Calle 93 #13-24, Bogotá', required: true }],
+  },
+  {
+    type: 'wifi',
+    label: 'Wi-Fi',
+    icon: Wifi,
+    emoji: '📶',
+    category: 'Negocios',
+    description: 'Conecta visitantes a tu red en segundos.',
     fields: [
-      { name: "phone",   label: "Número", type: "tel", required: true },
-      { name: "message", label: "Mensaje", type: "textarea" },
-    ] },
-
-  // Negocios
-  { type: "vcard",        label: "vCard (Contacto)",    icon: "👤", category: "Negocios",
+      { name: 'ssid', label: 'Nombre de la red', type: 'text', required: true },
+      { name: 'password', label: 'Contraseña', type: 'password' },
+      { name: 'security', label: 'Seguridad', type: 'select', options: ['WPA', 'WEP', 'nopass'] },
+    ],
+  },
+  {
+    type: 'email',
+    label: 'Correo electrónico',
+    icon: Mail,
+    emoji: '📧',
+    category: 'Esenciales',
+    description: 'Prepara un correo con asunto y mensaje.',
     fields: [
-      { name: "first_name", label: "Nombre",    type: "text", required: true },
-      { name: "last_name",  label: "Apellido",  type: "text" },
-      { name: "org",        label: "Empresa",   type: "text" },
-      { name: "title",      label: "Cargo",     type: "text" },
-      { name: "phone",      label: "Teléfono",  type: "tel" },
-      { name: "email",      label: "Email",     type: "email" },
-      { name: "website",    label: "Sitio web", type: "url" },
-      { name: "address",    label: "Dirección", type: "text" },
-    ] },
-  { type: "maps",         label: "Google Maps",         icon: "📍", category: "Negocios",
-    fields: [{ name: "address", label: "Dirección o lugar", type: "text", placeholder: "Calle 93 #13-24, Bogotá", required: true }] },
-  { type: "wifi",         label: "Wi-Fi",               icon: "📶", category: "Negocios",
-    fields: [
-      { name: "ssid",     label: "Nombre de la red", type: "text", required: true },
-      { name: "password", label: "Contraseña",       type: "password" },
-      { name: "security", label: "Seguridad",        type: "select", options: ["WPA", "WEP", "nopass"] },
-    ] },
-  { type: "pdf",          label: "PDF",                 icon: "📄", category: "Negocios",
-    fields: [{ name: "url", label: "URL del PDF", type: "url", required: true }] },
-  { type: "booking",      label: "Reserva en línea",    icon: "🗓️", category: "Negocios",
-    fields: [{ name: "url", label: "URL de reserva", type: "url", required: true }] },
-  { type: "googlereview", label: "Google Review",       icon: "⭐", category: "Negocios",
-    fields: [{ name: "url", label: "URL de reseñas Google", type: "url", required: true }] },
-  { type: "paypal",       label: "PayPal",              icon: "💳", category: "Negocios",
-    fields: [
-      { name: "email",    label: "Email PayPal", type: "email", required: true },
-      { name: "amount",   label: "Monto",        type: "number" },
-      { name: "currency", label: "Moneda",       type: "text", placeholder: "USD" },
-    ] },
-  { type: "etsy",         label: "Etsy",                icon: "🛍️", category: "Negocios",
-    fields: [{ name: "url", label: "URL de tu tienda Etsy", type: "url", required: true }] },
-
-  // Redes Sociales
-  { type: "instagram",    label: "Instagram",           icon: "📸", category: "Redes Sociales",
-    fields: [{ name: "username", label: "Usuario (@)", type: "text", placeholder: "miusuario", required: true }] },
-  { type: "facebook",     label: "Facebook",            icon: "👍", category: "Redes Sociales",
-    fields: [{ name: "url", label: "URL de perfil/página", type: "url", required: true }] },
-  { type: "tiktok",       label: "TikTok",              icon: "🎵", category: "Redes Sociales",
-    fields: [{ name: "username", label: "Usuario (@)", type: "text", required: true }] },
-  { type: "twitter",      label: "X (Twitter)",         icon: "🐦", category: "Redes Sociales",
-    fields: [{ name: "username", label: "Usuario (@)", type: "text", required: true }] },
-  { type: "linkedin",     label: "LinkedIn",            icon: "💼", category: "Redes Sociales",
-    fields: [{ name: "username", label: "Usuario de LinkedIn", type: "text", required: true }] },
-  { type: "telegram",     label: "Telegram",            icon: "✈️", category: "Redes Sociales",
-    fields: [{ name: "username", label: "Usuario (@)", type: "text", required: true }] },
-  { type: "snapchat",     label: "Snapchat",            icon: "👻", category: "Redes Sociales",
-    fields: [{ name: "username", label: "Usuario", type: "text", required: true }] },
-  { type: "reddit",       label: "Reddit",              icon: "🤖", category: "Redes Sociales",
-    fields: [{ name: "username", label: "Usuario u/", type: "text", required: true }] },
-  { type: "youtube",      label: "YouTube",             icon: "▶️", category: "Redes Sociales",
-    fields: [{ name: "url", label: "URL del canal o video", type: "url", required: true }] },
-  { type: "spotify",      label: "Spotify",             icon: "🎵", category: "Redes Sociales",
-    fields: [{ name: "url", label: "URL de Spotify", type: "url", required: true }] },
-  { type: "linktree",     label: "Linktree",            icon: "🌳", category: "Redes Sociales",
-    fields: [{ name: "username", label: "Usuario", type: "text", required: true }] },
-  { type: "wechat",       label: "WeChat",              icon: "💬", category: "Redes Sociales",
-    fields: [{ name: "url", label: "URL de WeChat", type: "url", required: true }] },
-  { type: "line",         label: "Line",                icon: "💬", category: "Redes Sociales",
-    fields: [{ name: "url", label: "URL de Line", type: "url", required: true }] },
-  { type: "kakaotalk",    label: "KakaoTalk",           icon: "💛", category: "Redes Sociales",
-    fields: [{ name: "url", label: "URL de KakaoTalk", type: "url", required: true }] },
-
-  // Pagos
-  { type: "crypto",       label: "Pago criptográfico",  icon: "₿", category: "Pagos",
-    fields: [
-      { name: "coin",    label: "Moneda", type: "select", options: ["bitcoin", "ethereum", "litecoin"] },
-      { name: "address", label: "Dirección", type: "text", required: true },
-      { name: "amount",  label: "Monto", type: "number" },
-    ] },
-  { type: "upi",          label: "UPI",                 icon: "💳", category: "Pagos",
-    fields: [
-      { name: "vpa",    label: "UPI VPA", type: "text", required: true },
-      { name: "name",   label: "Nombre",  type: "text" },
-      { name: "amount", label: "Monto",   type: "number" },
-    ] },
-  { type: "venmo",        label: "Venmo",               icon: "💸", category: "Pagos",
-    fields: [{ name: "username", label: "Usuario Venmo", type: "text", required: true }] },
-
-  // Documentos
-  { type: "googledoc",    label: "Google Doc",          icon: "📃", category: "Documentos",
-    fields: [{ name: "url", label: "URL del documento", type: "url", required: true }] },
-  { type: "googleforms",  label: "Google Forms",        icon: "📋", category: "Documentos",
-    fields: [{ name: "url", label: "URL del formulario", type: "url", required: true }] },
-  { type: "googlesheets", label: "Google Sheets",       icon: "📊", category: "Documentos",
-    fields: [{ name: "url", label: "URL de la hoja", type: "url", required: true }] },
-  { type: "office365",    label: "Office 365",          icon: "📎", category: "Documentos",
-    fields: [{ name: "url", label: "URL de Office 365", type: "url", required: true }] },
-  { type: "pptx",         label: "Presentación",        icon: "📊", category: "Documentos",
-    fields: [{ name: "url", label: "URL de la presentación", type: "url", required: true }] },
-  { type: "excel",        label: "Excel",               icon: "📈", category: "Documentos",
-    fields: [{ name: "url", label: "URL del Excel", type: "url", required: true }] },
-  { type: "archivo",      label: "Archivo",             icon: "📁", category: "Documentos",
-    fields: [{ name: "url", label: "URL del archivo", type: "url", required: true }] },
-  { type: "png",          label: "PNG / Imagen",        icon: "🖼️", category: "Documentos",
-    fields: [{ name: "url", label: "URL de la imagen", type: "url", required: true }] },
-  { type: "video",        label: "Video",               icon: "🎬", category: "Documentos",
-    fields: [{ name: "url", label: "URL del video", type: "url", required: true }] },
-
-  // Eventos
-  { type: "calendar",     label: "Evento / Calendar",   icon: "📅", category: "Eventos",
-    fields: [
-      { name: "title",       label: "Título", type: "text", required: true },
-      { name: "start",       label: "Inicio", type: "datetime-local", required: true },
-      { name: "end",         label: "Fin",    type: "datetime-local" },
-      { name: "location",    label: "Lugar",  type: "text" },
-      { name: "description", label: "Notas",  type: "textarea" },
-    ] },
-
-  // Otros
-  { type: "amazon",       label: "Amazon",              icon: "📦", category: "Otros",
-    fields: [{ name: "url", label: "URL del producto", type: "url", required: true }] },
-  { type: "pcr",          label: "PCR",                 icon: "🔲", category: "Otros",
-    fields: [{ name: "data", label: "Datos del código", type: "text", required: true }] },
-  { type: "barcode2d",    label: "Código de barras 2D", icon: "⬛", category: "Otros",
-    fields: [{ name: "data", label: "Datos", type: "text", required: true }] },
+      { name: 'email', label: 'Email', type: 'email', placeholder: 'contacto@empresa.com', required: true },
+      { name: 'subject', label: 'Asunto', type: 'text' },
+      { name: 'body', label: 'Mensaje', type: 'textarea' },
+    ],
+  },
+  {
+    type: 'phone',
+    label: 'Llamada',
+    icon: Phone,
+    emoji: '📞',
+    category: 'Esenciales',
+    description: 'Inicia una llamada al escanear.',
+    fields: [{ name: 'phone', label: 'Número', type: 'tel', placeholder: '+57 300 123 4567', required: true }],
+  },
+  {
+    type: 'text',
+    label: 'Texto',
+    icon: Type,
+    emoji: '📝',
+    category: 'Esenciales',
+    description: 'Guarda un texto corto o instrucción.',
+    fields: [{ name: 'text', label: 'Texto', type: 'textarea', placeholder: 'Escribe tu texto aquí', required: true }],
+  },
+  ...[
+    ['pdf', 'PDF', '📄', 'Documentos', 'URL pública de un PDF'],
+    ['googleforms', 'Google Forms', '📋', 'Documentos', 'Formulario de registro o encuesta'],
+    ['instagram', 'Instagram', '📸', 'Redes Sociales', 'Perfil o usuario de Instagram'],
+    ['tiktok', 'TikTok', '🎵', 'Redes Sociales', 'Perfil de TikTok'],
+    ['linkedin', 'LinkedIn', '💼', 'Redes Sociales', 'Perfil profesional'],
+    ['youtube', 'YouTube', '▶️', 'Redes Sociales', 'Canal o video'],
+    ['booking', 'Reserva online', '🗓️', 'Negocios', 'Página de reservas'],
+    ['googlereview', 'Google Review', '⭐', 'Negocios', 'Página para reseñas'],
+    ['video', 'Video', '🎬', 'Documentos', 'Enlace a video'],
+  ].map(([type, label, emoji, category, description]) => ({
+    type,
+    label,
+    emoji,
+    icon: LinkIcon,
+    category,
+    description,
+    fields: [{ name: type === 'instagram' || type === 'tiktok' ? 'username' : 'url', label: type === 'instagram' || type === 'tiktok' ? 'Usuario' : 'URL', type: type === 'instagram' || type === 'tiktok' ? 'text' : 'url', required: true }],
+  })),
 ]
-
-const CATEGORIES = [...new Set(QR_TYPES.map(t => t.category))]
 
 const STYLES = [
-  { value: 'square',  label: '■ Cuadrado' },
-  { value: 'rounded', label: '⬛ Redondeado' },
-  { value: 'circle',  label: '● Círculo' },
+  { value: 'square', label: 'Cuadrado' },
+  { value: 'rounded', label: 'Redondeado' },
+  { value: 'circle', label: 'Círculo' },
 ]
 
-// ── Preview content generator (client-side) ───────────────────
 function getPreviewContent(type, payload) {
-  try {
-    if (type === 'url')       return payload.url || 'https://qrservice.com'
-    if (type === 'whatsapp')  return `https://wa.me/${(payload.phone||'').replace(/\D/g,'')}`
-    if (type === 'email')     return `mailto:${payload.email || 'ejemplo@email.com'}`
-    if (type === 'phone')     return `tel:${payload.phone || '+1234567890'}`
-    if (type === 'sms')       return `sms:${payload.phone || ''}`
-    if (type === 'wifi')      return `WIFI:T:${payload.security||'WPA'};S:${payload.ssid||'MiWiFi'};P:${payload.password||''};;`
-    if (type === 'vcard')     return `BEGIN:VCARD\nFN:${payload.first_name||''} ${payload.last_name||''}\nEND:VCARD`
-    if (type === 'maps')      return `https://maps.google.com/?q=${encodeURIComponent(payload.address||'')}`
-    if (type === 'instagram') return `https://instagram.com/${payload.username||''}`
-    if (type === 'twitter')   return `https://x.com/${payload.username||''}`
-    if (type === 'tiktok')    return `https://tiktok.com/@${payload.username||''}`
-    if (type === 'telegram')  return `https://t.me/${payload.username||''}`
-    if (type === 'crypto')    return `${payload.coin||'bitcoin'}:${payload.address||''}`
-    if (type === 'calendar')  return `BEGIN:VCALENDAR\nSUMMARY:${payload.title||''}\nEND:VCALENDAR`
-    return payload.url || payload.text || payload.data || `https://qrservice.com/${type}`
-  } catch { return 'https://qrservice.com' }
+  if (type === 'url') return payload.url || 'https://qrservice.com'
+  if (type === 'whatsapp') return `https://wa.me/${(payload.phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(payload.message || '')}`
+  if (type === 'email') return `mailto:${payload.email || 'contacto@empresa.com'}?subject=${encodeURIComponent(payload.subject || '')}`
+  if (type === 'phone') return `tel:${payload.phone || '+573001234567'}`
+  if (type === 'wifi') return `WIFI:T:${payload.security || 'WPA'};S:${payload.ssid || 'MiWiFi'};P:${payload.password || ''};;`
+  if (type === 'maps') return `https://maps.google.com/?q=${encodeURIComponent(payload.address || '')}`
+  if (type === 'vcard') return `BEGIN:VCARD\nVERSION:3.0\nFN:${payload.first_name || ''} ${payload.last_name || ''}\nORG:${payload.org || ''}\nTEL:${payload.phone || ''}\nEMAIL:${payload.email || ''}\nEND:VCARD`
+  if (type === 'instagram') return `https://instagram.com/${String(payload.username || '').replace('@', '')}`
+  if (type === 'tiktok') return `https://tiktok.com/@${String(payload.username || '').replace('@', '')}`
+  if (type === 'text') return payload.text || 'Texto de ejemplo'
+  return payload.url || payload.username || payload.text || 'https://qrservice.com'
+}
+
+function DynamicField({ field, value, onChange }) {
+  return (
+    <div>
+      <label className="label">
+        {field.label}
+        {field.required && <span className="text-red-500"> *</span>}
+      </label>
+
+      {field.type === 'textarea' ? (
+        <textarea
+          value={value || ''}
+          onChange={(event) => onChange(field.name, event.target.value)}
+          placeholder={field.placeholder}
+          required={field.required}
+          rows={4}
+          className="input-field resize-y"
+        />
+      ) : field.type === 'select' ? (
+        <select value={value || field.options?.[0] || ''} onChange={(event) => onChange(field.name, event.target.value)} className="input-field">
+          {field.options?.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      ) : (
+        <input
+          type={field.type}
+          value={value || ''}
+          onChange={(event) => onChange(field.name, event.target.value)}
+          placeholder={field.placeholder}
+          required={field.required}
+          className="input-field"
+        />
+      )}
+    </div>
+  )
 }
 
 export default function CreateQR() {
   const navigate = useNavigate()
-  const [step, setStep]             = useState(1) // 1=selector, 2=formulario
-  const [search, setSearch]         = useState('')
-  const [selectedType, setSelectedType] = useState(null)
-  const [showMore, setShowMore]     = useState(false)
-  const [payload, setPayload]       = useState({})
-  const [title, setTitle]           = useState('')
-  const [style, setStyle]           = useState({
-    foreground_color: '#000000',
-    background_color: '#FFFFFF',
-    module_style: 'square',
+  const [searchParams] = useSearchParams()
+  const preselectedCampaignId = searchParams.get('campaign_id')
+
+  const [step, setStep] = useState(1)
+  const [search, setSearch] = useState('')
+  const [showMore, setShowMore] = useState(false)
+  const [selectedType, setSelectedType] = useState(QR_TYPES[0])
+  const [payload, setPayload] = useState({})
+  const [title, setTitle] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [style, setStyle] = useState({
+    foreground_color: '#111827',
+    background_color: '#ffffff',
+    module_style: 'rounded',
     error_correction: 'M',
     box_size: 10,
     border: 4,
   })
-  const [loading, setLoading]       = useState(false)
 
-  const filtered = QR_TYPES.filter(t =>
-    t.label.toLowerCase().includes(search.toLowerCase()) ||
-    t.category.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return QR_TYPES.filter((item) => !q || [item.label, item.category, item.description].some((value) => value.toLowerCase().includes(q)))
+  }, [search])
 
-  const visible = showMore ? filtered : filtered.slice(0, 24)
+  const visible = showMore ? filtered : filtered.slice(0, 12)
+  const previewContent = getPreviewContent(selectedType.type, payload)
 
-  const setField = (name, val) => setPayload(p => ({ ...p, [name]: val }))
+  const setField = (name, value) => setPayload((prev) => ({ ...prev, [name]: value }))
 
-  const previewContent = selectedType
-    ? getPreviewContent(selectedType.type, payload)
-    : 'https://qrservice.com'
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  const handleSubmit = async (event) => {
+    event.preventDefault()
     setLoading(true)
+
     try {
-      await qrAPI.create({
+      const body = {
         qr_type: selectedType.type,
-        title: title || undefined,
+        title: title || `QR de ${selectedType.label}`,
         payload,
         style,
-      })
-      toast.success('¡QR creado exitosamente!')
-      navigate('/dashboard')
+      }
+
+      if (preselectedCampaignId) body.campaign_id = preselectedCampaignId
+
+      const { data } = await qrAPI.create(body)
+      toast.success('QR creado exitosamente')
+      navigate(data?.id ? `/qr/${data.id}` : '/dashboard')
     } catch (err) {
-      const msg = err.response?.data?.detail?.message || 'Error al crear el QR'
-      toast.error(msg)
-      if (err.response?.status === 403) setTimeout(() => navigate('/billing'), 1500)
+      const msg = err.response?.data?.detail?.message || err.response?.data?.detail || 'Error al crear el QR'
+      toast.error(typeof msg === 'string' ? msg : 'Error al crear el QR')
+      if (err.response?.status === 403) setTimeout(() => navigate('/billing'), 1200)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 24px' }}>
-      <button
-        onClick={() => step === 1 ? navigate('/dashboard') : setStep(1)}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6b7280',
-                 background: 'none', border: 'none', cursor: 'pointer', marginBottom: 24,
-                 fontSize: 14, fontWeight: 500 }}
-      >
-        <ArrowLeft size={18} /> {step === 1 ? 'Volver al dashboard' : 'Cambiar tipo'}
-      </button>
+    <>
+      <PageHeader
+        backTo="/dashboard"
+        backLabel="Dashboard"
+        eyebrow={<><Sparkles size={13} /> Constructor inteligente</>}
+        title="Crea un QR profesional"
+        description="Elige el tipo, personaliza el diseño y revisa la vista previa antes de publicarlo."
+      />
 
-      {/* ── Stepper ───────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 32 }}>
-        {['Elige el tipo', 'Configura tu QR'].map((label, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', flex: i === 0 ? 'none' : 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: '50%', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700,
-                background: step > i ? '#5B21B6' : step === i + 1 ? '#5B21B6' : '#e5e7eb',
-                color: step >= i + 1 ? 'white' : '#9ca3af',
-              }}>
-                {i + 1}
+      <div className="mb-6 grid gap-3 sm:grid-cols-2">
+        {['Elige el tipo', 'Configura y publica'].map((label, index) => {
+          const active = step === index + 1
+          const done = step > index + 1
+          return (
+            <div key={label} className={cx('rounded-2xl border p-4', active ? 'border-brand-300 bg-brand-50 text-brand-800' : done ? 'border-green-200 bg-green-50 text-green-700' : 'border-ink-200 bg-white text-ink-400')}>
+              <div className="flex items-center gap-3">
+                <span className={cx('flex h-8 w-8 items-center justify-center rounded-xl text-sm font-black', active ? 'bg-brand-700 text-white' : done ? 'bg-green-600 text-white' : 'bg-ink-100 text-ink-400')}>
+                  {done ? <Check size={16} /> : index + 1}
+                </span>
+                <span className="font-black">{label}</span>
               </div>
-              <span style={{ fontSize: 14, fontWeight: 600,
-                color: step === i + 1 ? '#5B21B6' : step > i + 1 ? '#374151' : '#9ca3af' }}>
-                {label}
-              </span>
             </div>
-            {i === 0 && (
-              <div style={{ flex: 1, height: 2, background: step > 1 ? '#5B21B6' : '#e5e7eb',
-                           margin: '0 16px', borderRadius: 2 }} />
-            )}
-          </div>
-        ))}
+          )
+        })}
       </div>
 
-      {/* ── Step 1: Selector de tipo ──────────────────────── */}
       {step === 1 && (
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, marginBottom: 6 }}>
-            Todo tipo de códigos QR
-          </h1>
-          <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 24 }}>
-            Selecciona el tipo de QR que quieres crear
-          </p>
-
-          {/* Search */}
-          <div style={{ position: 'relative', marginBottom: 24, maxWidth: 380 }}>
-            <Search size={16} style={{ position: 'absolute', left: 12, top: '50%',
-              transform: 'translateY(-50%)', color: '#9ca3af' }} />
-            <input
-              type="text" placeholder="Tipo de búsqueda"
-              value={search} onChange={e => setSearch(e.target.value)}
-              style={{ width: '100%', padding: '10px 12px 10px 36px',
-                border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 14,
-                outline: 'none', color: '#374151' }}
-            />
-          </div>
-
-          {/* Grid de tipos */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-            gap: 10,
-          }}>
-            {visible.map(t => (
-              <button
-                key={t.type}
-                onClick={() => { setSelectedType(t); setPayload({}); setStep(2) }}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '14px 16px', background: 'white',
-                  border: '1px solid #e5e7eb', borderRadius: 12, cursor: 'pointer',
-                  textAlign: 'left', transition: 'border-color .15s, box-shadow .15s',
-                  gap: 8,
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = '#7C3AED'; e.currentTarget.style.boxShadow = '0 2px 12px rgba(124,58,237,.1)' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.boxShadow = 'none' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 18 }}>{t.icon}</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{t.label}</span>
-                </div>
-                <span style={{ color: '#7C3AED', fontWeight: 700, fontSize: 16 }}>→</span>
-              </button>
-            ))}
-          </div>
-
-          {filtered.length > 24 && (
-            <div style={{ textAlign: 'center', marginTop: 20 }}>
-              <button
-                onClick={() => setShowMore(v => !v)}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
-                         background: 'none', border: 'none', color: '#7C3AED',
-                         fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
-              >
-                {showMore ? <><ChevronUp size={16} /> Ver menos</> : <><ChevronDown size={16} /> Ver más</>}
-              </button>
+        <Card>
+          <CardBody>
+            <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-ink-950">¿Qué tipo de QR necesitas?</h2>
+                <p className="mt-1 text-sm text-ink-500">Mostramos los más usados primero para que no pierdas tiempo.</p>
+              </div>
+              <div className="relative w-full lg:max-w-sm">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-400" size={18} />
+                <input className="input-field pl-11" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar tipo, categoría..." />
+              </div>
             </div>
-          )}
-        </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {visible.map((item) => {
+                const Icon = item.icon || LinkIcon
+                return (
+                  <button
+                    key={item.type}
+                    onClick={() => {
+                      setSelectedType(item)
+                      setPayload({})
+                      setTitle('')
+                      setStep(2)
+                    }}
+                    className="group rounded-3xl border border-ink-200 bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-card"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
+                          <Icon size={22} />
+                        </div>
+                        <div>
+                          <h3 className="font-black text-ink-950">{item.label}</h3>
+                          <p className="mt-1 text-xs leading-5 text-ink-500">{item.description}</p>
+                        </div>
+                      </div>
+                      <ArrowRight className="text-ink-300 transition group-hover:translate-x-1 group-hover:text-brand-600" size={18} />
+                    </div>
+                    <Badge variant="brand" className="mt-4">{item.category}</Badge>
+                  </button>
+                )
+              })}
+            </div>
+
+            {filtered.length > 12 && (
+              <div className="mt-6 text-center">
+                <Button variant="secondary" onClick={() => setShowMore((value) => !value)}>
+                  {showMore ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  {showMore ? 'Ver menos' : 'Ver más tipos'}
+                </Button>
+              </div>
+            )}
+          </CardBody>
+        </Card>
       )}
 
-      {/* ── Step 2: Formulario + Preview ─────────────────── */}
-      {step === 2 && selectedType && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 32, alignItems: 'start' }}>
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {/* Header del tipo seleccionado */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12,
-                         background: '#F5F3FF', borderRadius: 14, padding: '14px 18px' }}>
-              <span style={{ fontSize: 28 }}>{selectedType.icon}</span>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: 18 }}>{selectedType.label}</div>
-                <div style={{ fontSize: 12, color: '#7C3AED', fontWeight: 600 }}>{selectedType.category}</div>
-              </div>
-            </div>
+      {step === 2 && (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_390px]">
+          <form onSubmit={handleSubmit} className="grid gap-6">
+            <Card>
+              <CardBody>
+                <div className="mb-6 flex items-center gap-4 rounded-3xl bg-brand-50 p-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">
+                    {selectedType.emoji}
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-ink-950">{selectedType.label}</h2>
+                    <p className="text-sm font-semibold text-brand-700">{selectedType.category}</p>
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" className="ml-auto" onClick={() => setStep(1)}>
+                    Cambiar
+                  </Button>
+                </div>
 
-            {/* Título */}
-            <div>
-              <label style={labelStyle}>Título (opcional)</label>
-              <input
-                type="text" value={title}
-                onChange={e => setTitle(e.target.value)} maxLength={255}
-                placeholder={`Mi QR de ${selectedType.label}`}
-                style={inputStyle}
-              />
-            </div>
+                <div className="grid gap-5">
+                  <div>
+                    <label className="label">Título del QR</label>
+                    <input
+                      value={title}
+                      onChange={(event) => setTitle(event.target.value)}
+                      maxLength={255}
+                      placeholder={`Mi ${selectedType.label}`}
+                      className="input-field"
+                    />
+                  </div>
 
-            {/* Campos dinámicos por tipo */}
-            {selectedType.fields.map(field => (
-              <div key={field.name}>
-                <label style={labelStyle}>
-                  {field.label}
-                  {field.required && <span style={{ color: '#ef4444' }}> *</span>}
-                </label>
-                {field.type === 'textarea' ? (
-                  <textarea
-                    value={payload[field.name] || ''}
-                    onChange={e => setField(field.name, e.target.value)}
-                    placeholder={field.placeholder}
-                    required={field.required}
-                    rows={3}
-                    style={{ ...inputStyle, resize: 'vertical', height: 80 }}
-                  />
-                ) : field.type === 'select' ? (
-                  <select
-                    value={payload[field.name] || field.options?.[0] || ''}
-                    onChange={e => setField(field.name, e.target.value)}
-                    style={inputStyle}
-                  >
-                    {field.options?.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                ) : (
-                  <input
-                    type={field.type}
-                    value={payload[field.name] || ''}
-                    onChange={e => setField(field.name, e.target.value)}
-                    placeholder={field.placeholder}
-                    required={field.required}
-                    style={inputStyle}
-                  />
-                )}
-              </div>
-            ))}
+                  {selectedType.fields.map((field) => (
+                    <DynamicField key={field.name} field={field} value={payload[field.name]} onChange={setField} />
+                  ))}
+                </div>
+              </CardBody>
+            </Card>
 
-            {/* Estilo */}
-            <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: 20 }}>
-              <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Personalización</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                {STYLES.map(s => (
-                  <button
-                    key={s.value} type="button"
-                    onClick={() => setStyle(st => ({ ...st, module_style: s.value }))}
-                    style={{
-                      padding: '9px 4px', borderRadius: 10, border: '1.5px solid',
-                      fontWeight: 600, fontSize: 12, cursor: 'pointer', transition: 'all .15s',
-                      borderColor: style.module_style === s.value ? '#5B21B6' : '#e5e7eb',
-                      background: style.module_style === s.value ? '#F5F3FF' : 'white',
-                      color: style.module_style === s.value ? '#5B21B6' : '#6b7280',
-                    }}
-                  >{s.label}</button>
-                ))}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-                <div>
-                  <label style={labelStyle}>Color QR</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <input type="color" value={style.foreground_color}
-                      onChange={e => setStyle(s => ({ ...s, foreground_color: e.target.value }))}
-                      style={{ width: 40, height: 40, borderRadius: 8, border: '1px solid #e5e7eb', cursor: 'pointer' }} />
-                    <span style={{ fontSize: 12, color: '#6b7280' }}>{style.foreground_color}</span>
+            <Card>
+              <CardBody>
+                <div className="mb-5 flex items-center gap-2">
+                  <Palette size={18} className="text-brand-700" />
+                  <h3 className="font-black text-ink-950">Personalización visual</h3>
+                </div>
+
+                <div className="grid gap-5">
+                  <div>
+                    <label className="label">Estilo de módulos</label>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {STYLES.map((item) => (
+                        <button
+                          key={item.value}
+                          type="button"
+                          onClick={() => setStyle((prev) => ({ ...prev, module_style: item.value }))}
+                          className={cx('rounded-2xl border px-4 py-3 text-sm font-black transition', style.module_style === item.value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-ink-200 bg-white text-ink-500 hover:border-brand-200')}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="label">Color del QR</label>
+                      <div className="flex items-center gap-3">
+                        <input type="color" value={style.foreground_color} onChange={(event) => setStyle((prev) => ({ ...prev, foreground_color: event.target.value }))} className="h-12 w-14 cursor-pointer rounded-2xl border border-ink-200 bg-white p-1" />
+                        <span className="font-mono text-sm font-bold text-ink-500">{style.foreground_color}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label">Color de fondo</label>
+                      <div className="flex items-center gap-3">
+                        <input type="color" value={style.background_color} onChange={(event) => setStyle((prev) => ({ ...prev, background_color: event.target.value }))} className="h-12 w-14 cursor-pointer rounded-2xl border border-ink-200 bg-white p-1" />
+                        <span className="font-mono text-sm font-bold text-ink-500">{style.background_color}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <label style={labelStyle}>Fondo</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <input type="color" value={style.background_color}
-                      onChange={e => setStyle(s => ({ ...s, background_color: e.target.value }))}
-                      style={{ width: 40, height: 40, borderRadius: 8, border: '1px solid #e5e7eb', cursor: 'pointer' }} />
-                    <span style={{ fontSize: 12, color: '#6b7280' }}>{style.background_color}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+              </CardBody>
+            </Card>
 
-            <button
-              type="submit" disabled={loading}
-              style={{
-                padding: '14px', borderRadius: 14, background: '#5B21B6', color: 'white',
-                fontWeight: 700, fontSize: 16, border: 'none', cursor: 'pointer',
-                opacity: loading ? .6 : 1, transition: 'background .15s',
-              }}
-            >
-              {loading ? 'Creando QR...' : `Crear QR de ${selectedType.label}`}
-            </button>
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button type="button" variant="secondary" onClick={() => setStep(1)}>Volver</Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? 'Creando QR...' : 'Crear QR profesional'}
+                {!loading && <ArrowRight size={17} />}
+              </Button>
+            </div>
           </form>
 
-          {/* Preview sticky */}
-          <div style={{ position: 'sticky', top: 80, background: 'white',
-                       border: '1px solid #f3f4f6', borderRadius: 20, padding: 28,
-                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#9ca3af' }}>Vista previa</div>
-            <div style={{ padding: 16, background: '#fafafa', borderRadius: 16 }}>
-              <QRCodeSVG
-                value={previewContent}
-                size={200}
-                fgColor={style.foreground_color}
-                bgColor={style.background_color}
-                level={style.error_correction}
-              />
-            </div>
-            <div style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af',
-                         wordBreak: 'break-all', maxWidth: 280 }}>
-              {previewContent.length > 80 ? previewContent.slice(0, 80) + '...' : previewContent}
-            </div>
-            <div style={{ background: '#F5F3FF', borderRadius: 10, padding: '8px 14px',
-                         fontSize: 12, color: '#5B21B6', fontWeight: 600, display: 'flex',
-                         alignItems: 'center', gap: 6 }}>
-              <span>{selectedType.icon}</span> {selectedType.label}
-            </div>
-          </div>
+          <aside className="xl:sticky xl:top-24 xl:self-start">
+            <Card className="overflow-hidden">
+              <div className="border-b border-ink-100 bg-gradient-to-br from-brand-50 to-white p-5">
+                <p className="text-sm font-black text-ink-950">Vista previa</p>
+                <p className="text-xs text-ink-500">Así se verá tu QR antes de guardarlo.</p>
+              </div>
+              <CardBody>
+                <div className="mx-auto flex max-w-xs flex-col items-center">
+                  <div className="rounded-[2rem] border border-ink-100 bg-white p-5 shadow-card">
+                    <QRCodeSVG
+                      value={previewContent}
+                      size={230}
+                      fgColor={style.foreground_color}
+                      bgColor={style.background_color}
+                      level={style.error_correction}
+                    />
+                  </div>
+                  <Badge variant="brand" className="mt-5">{selectedType.emoji} {selectedType.label}</Badge>
+                  <p className="mt-4 max-w-full break-words text-center text-xs leading-5 text-ink-400">
+                    {previewContent.length > 120 ? `${previewContent.slice(0, 120)}...` : previewContent}
+                  </p>
+                </div>
+              </CardBody>
+            </Card>
+          </aside>
         </div>
       )}
-    </div>
+    </>
   )
-}
-
-const labelStyle = {
-  display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6,
-}
-
-const inputStyle = {
-  width: '100%', padding: '10px 14px',
-  border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 14,
-  outline: 'none', color: '#374151', background: 'white',
-  transition: 'border-color .15s',
 }

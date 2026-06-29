@@ -1,6 +1,3 @@
-/**
- * App.jsx — Sprint 3: rutas de campañas.
- */
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx'
 import Login from './pages/Login'
@@ -15,44 +12,45 @@ import BillingSuccess from './pages/BillingSuccess'
 import BillingCancel from './pages/BillingCancel'
 import LandingPage from './pages/LandingPage'
 import OAuthCallback from './pages/OAuthCallback'
-import Navbar from './components/Navbar'
+import AppShell from './components/AppShell'
+import LoadingScreen from './components/ui/LoadingScreen'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-violet-600" />
-      </div>
-    )
-  }
-  return user ? children : <Navigate to="/" />
+
+  if (loading) return <LoadingScreen label="Validando sesión..." />
+
+  return user ? <AppShell>{children}</AppShell> : <Navigate to="/login" replace />
+}
+
+function PublicRoute({ children }) {
+  const { user, loading } = useAuth()
+
+  if (loading) return <LoadingScreen label="Cargando portal..." />
+
+  return user ? <Navigate to="/dashboard" replace /> : children
 }
 
 function AppRoutes() {
-  const { user } = useAuth()
   return (
-    <>
-      {user && <Navbar />}
-      <Routes>
-        <Route path="/oauth/callback" element={<OAuthCallback />} />
+    <Routes>
+      <Route path="/oauth/callback" element={<OAuthCallback />} />
 
-        <Route path="/"         element={user ? <Navigate to="/dashboard" /> : <LandingPage />} />
-        <Route path="/login"    element={user ? <Navigate to="/dashboard" /> : <Login />} />
-        <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
+      <Route path="/" element={<PublicRoute><LandingPage /></PublicRoute>} />
+      <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+      <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
 
-        <Route path="/dashboard"          element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-        <Route path="/create"             element={<PrivateRoute><CreateQR /></PrivateRoute>} />
-        <Route path="/qr/:id"             element={<PrivateRoute><QRDetail /></PrivateRoute>} />
-        <Route path="/campaigns"          element={<PrivateRoute><Campaigns /></PrivateRoute>} />
-        <Route path="/campaigns/:id"      element={<PrivateRoute><CampaignDetail /></PrivateRoute>} />
-        <Route path="/billing"            element={<PrivateRoute><Billing /></PrivateRoute>} />
-        <Route path="/billing/success"    element={<PrivateRoute><BillingSuccess /></PrivateRoute>} />
-        <Route path="/billing/cancel"     element={<PrivateRoute><BillingCancel /></PrivateRoute>} />
+      <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+      <Route path="/create" element={<PrivateRoute><CreateQR /></PrivateRoute>} />
+      <Route path="/qr/:id" element={<PrivateRoute><QRDetail /></PrivateRoute>} />
+      <Route path="/campaigns" element={<PrivateRoute><Campaigns /></PrivateRoute>} />
+      <Route path="/campaigns/:id" element={<PrivateRoute><CampaignDetail /></PrivateRoute>} />
+      <Route path="/billing" element={<PrivateRoute><Billing /></PrivateRoute>} />
+      <Route path="/billing/success" element={<PrivateRoute><BillingSuccess /></PrivateRoute>} />
+      <Route path="/billing/cancel" element={<PrivateRoute><BillingCancel /></PrivateRoute>} />
 
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
-    </>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }
 

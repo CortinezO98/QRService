@@ -3,7 +3,118 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light;
+    --brand: 124 58 237;
+    --ink: 15 23 42;
+  }
+
+  * {
+    @apply border-ink-200;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply min-h-screen bg-ink-50 font-sans text-ink-900 antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    @apply focus:outline-none;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    @apply ring-2 ring-brand-500 ring-offset-2 ring-offset-white;
+  }
+
+  ::selection {
+    @apply bg-brand-200 text-brand-950;
+  }
+}
+
+@layer components {
+  .app-bg {
+    background:
+      radial-gradient(circle at top left, rgba(124, 58, 237, 0.10), transparent 36rem),
+      radial-gradient(circle at top right, rgba(163, 230, 53, 0.13), transparent 30rem),
+      linear-gradient(180deg, #ffffff 0%, #f8fafc 38%, #f1f5f9 100%);
+  }
+
+  .glass-card {
+    @apply border border-white/70 bg-white/85 shadow-card backdrop-blur-xl;
+  }
+
+  .surface-card {
+    @apply rounded-3xl border border-ink-200/80 bg-white shadow-card;
+  }
+
+  .input-field {
+    @apply w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm text-ink-800 placeholder:text-ink-400 transition hover:border-ink-300 focus:border-brand-500 focus:ring-4 focus:ring-brand-100;
+  }
+
+  .label {
+    @apply mb-2 block text-sm font-semibold text-ink-700;
+  }
+
+  .eyebrow {
+    @apply inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-brand-700;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-bold transition disabled:pointer-events-none disabled:opacity-60;
+  }
+
+  .btn-primary {
+    @apply btn bg-brand-700 text-white shadow-glow hover:bg-brand-800;
+  }
+
+  .btn-secondary {
+    @apply btn border border-ink-200 bg-white text-ink-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-50 text-red-700 hover:bg-red-100;
+  }
+
+  .btn-ghost {
+    @apply btn text-ink-600 hover:bg-ink-100 hover:text-ink-950;
+  }
+
+  .safe-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-soft::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scrollbar-soft::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-ink-300;
+  }
+
+  .scrollbar-soft::-webkit-scrollbar-track {
+    @apply bg-transparent;
   }
 }
