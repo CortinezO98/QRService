@@ -52,7 +52,7 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/70 bg-white/80 backdrop-blur-xl">
-      <div className="container">
+      <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-12">
         <div className="flex h-16 items-center justify-between gap-3">
           <Link to="/dashboard" className="flex items-center gap-2 font-black tracking-tight text-brand-700">
             <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-700 text-white shadow-glow">
