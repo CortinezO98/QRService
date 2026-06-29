@@ -1,6 +1,7 @@
 """
 Database Models — SQLAlchemy 2.0
 Sprint 3: Agrega Campaign y campaign_id en QRCode.
+Sprint 5: Agrega is_admin en User.
 """
 import uuid
 from datetime import datetime, timezone
@@ -67,6 +68,7 @@ class User(TimestampMixin, Base):
     full_name: Mapped[Optional[str]] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # Sprint 5
     verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     subscriptions: Mapped[List["Subscription"]] = relationship(back_populates="user")
@@ -114,10 +116,6 @@ class Subscription(TimestampMixin, Base):
 
 
 class Campaign(TimestampMixin, Base):
-    """
-    Campaña / Carpeta para agrupar QR codes.
-    Sprint 3: Diferenciador de producto para STARTER, PRO y BUSINESS.
-    """
     __tablename__ = "campaigns"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -126,7 +124,7 @@ class Campaign(TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
-    color: Mapped[str] = mapped_column(String(7), default="#6366f1")  # hex color
+    color: Mapped[str] = mapped_column(String(7), default="#6366f1")
 
     user: Mapped["User"] = relationship(back_populates="campaigns")
     qr_codes: Mapped[List["QRCode"]] = relationship(back_populates="campaign")
@@ -146,7 +144,6 @@ class QRCode(TimestampMixin, Base):
     subscription_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("subscriptions.id"), nullable=False
     )
-    # Sprint 3: campaign_id opcional
     campaign_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True, index=True
     )

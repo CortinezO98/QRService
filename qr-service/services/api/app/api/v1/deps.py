@@ -1,12 +1,9 @@
 """
 FastAPI Dependencies
 SWEBOK v4: Software Construction — Dependency Injection
-OWASP A01: Broken Access Control — todas las rutas privadas pasan por aquí
+OWASP A01: Broken Access Control
 
-Cambios Sprint 1:
-- Eliminado require_annual_plan (modelo viejo $49.99)
-- Agregado require_paid_plan (acepta STARTER/PRO/BUSINESS)
-- get_current_user lee access_token desde cookie O header Authorization
+Sprint 5: Agrega require_admin
 """
 from datetime import datetime, timezone
 from typing import Annotated, Optional
@@ -28,7 +25,6 @@ from app.services.auth_service import decode_access_token
 
 logger = structlog.get_logger(__name__)
 
-# Bearer scheme (opcional — cookie tiene prioridad)
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -40,14 +36,11 @@ async def get_current_user(
     """
     Extrae y valida el access token.
     Prioridad: 1) Cookie HttpOnly  2) Header Authorization Bearer
-    OWASP A07: Token validado antes de cualquier operación.
     """
     token: Optional[str] = None
 
-    # 1. Cookie HttpOnly (producción, OAuth, frontend)
     if access_token:
         token = access_token
-    # 2. Header Bearer (API directa, desarrollo, tests)
     elif credentials and credentials.credentials:
         token = credentials.credentials
 
@@ -81,19 +74,32 @@ async def get_current_user(
             detail={"error": "USER_INACTIVE", "message": "Usuario no encontrado o inactivo."},
         )
 
-    # Bind user_id al contexto de logging para trazabilidad
     structlog.contextvars.bind_contextvars(user_id=str(user.id))
     return user
+
+
+async def require_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Verifica que el usuario sea administrador.
+    Sprint 5: Protege todos los endpoints /admin/*.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "ADMIN_REQUIRED",
+                "message": "Acceso restringido a administradores.",
+            },
+        )
+    return current_user
 
 
 async def require_active_subscription(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Subscription:
-    """
-    Verifica que el usuario tenga suscripción activa (cualquier plan).
-    Lanza 402 si la suscripción venció.
-    """
     now = datetime.now(timezone.utc)
     sub = await db.scalar(
         select(Subscription).where(
@@ -109,10 +115,7 @@ async def require_active_subscription(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail={
                 "error": "SUBSCRIPTION_EXPIRED",
-                "message": (
-                    "Tu suscripción ha vencido. "
-                    "Renuévala gratis o elige un plan de pago para continuar."
-                ),
+                "message": "Tu suscripción ha vencido.",
                 "renew_url": "/api/v1/billing/renew-free",
                 "checkout_url": "/api/v1/billing/checkout",
             },
@@ -124,12 +127,6 @@ async def require_paid_plan(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Subscription:
-    """
-    Verifica que el usuario tenga un plan de pago activo (STARTER/PRO/BUSINESS).
-    Reemplaza el obsoleto require_annual_plan ($49.99 / plan 'annual').
-
-    Uso: analytics avanzados, logo personalizado, etc.
-    """
     now = datetime.now(timezone.utc)
     paid_plans = [SubscriptionPlan.STARTER, SubscriptionPlan.PRO, SubscriptionPlan.BUSINESS]
 
@@ -150,11 +147,6 @@ async def require_paid_plan(
                 "error": "PAID_PLAN_REQUIRED",
                 "message": "Esta función requiere un plan de pago (Starter, Pro o Business).",
                 "upgrade_url": "/api/v1/billing/checkout",
-                "plans": [
-                    {"plan": "starter", "price_usd": 10, "qr_quota": 5},
-                    {"plan": "pro", "price_usd": 20, "qr_quota": 15},
-                    {"plan": "business", "price_usd": 30, "qr_quota": 30},
-                ],
             },
         )
     return sub
@@ -163,7 +155,6 @@ async def require_paid_plan(
 async def require_verified_email(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """Exige que el usuario haya verificado su email."""
     if not current_user.is_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -176,7 +167,8 @@ async def require_verified_email(
 
 
 # ── Annotated aliases ─────────────────────────────────────────
-CurrentUser = Annotated[User, Depends(get_current_user)]
+CurrentUser       = Annotated[User, Depends(get_current_user)]
+AdminUser         = Annotated[User, Depends(require_admin)]
 ActiveSubscription = Annotated[Subscription, Depends(require_active_subscription)]
-PaidSubscription = Annotated[Subscription, Depends(require_paid_plan)]
-DBSession = Annotated[AsyncSession, Depends(get_db)]
+PaidSubscription  = Annotated[Subscription, Depends(require_paid_plan)]
+DBSession         = Annotated[AsyncSession, Depends(get_db)]

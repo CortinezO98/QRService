@@ -12,23 +12,28 @@ import BillingSuccess from './pages/BillingSuccess'
 import BillingCancel from './pages/BillingCancel'
 import LandingPage from './pages/LandingPage'
 import OAuthCallback from './pages/OAuthCallback'
+import AdminDashboard from './pages/AdminDashboard'
 import AppShell from './components/AppShell'
 import LoadingScreen from './components/ui/LoadingScreen'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
-
   if (loading) return <LoadingScreen label="Validando sesión..." />
-
   return user ? <AppShell>{children}</AppShell> : <Navigate to="/login" replace />
 }
 
 function PublicRoute({ children }) {
   const { user, loading } = useAuth()
-
   if (loading) return <LoadingScreen label="Cargando portal..." />
-
   return user ? <Navigate to="/dashboard" replace /> : children
+}
+
+function AdminRoute({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return <LoadingScreen label="Verificando permisos..." />
+  if (!user) return <Navigate to="/login" replace />
+  if (!user.is_admin) return <Navigate to="/dashboard" replace />
+  return children
 }
 
 function AppRoutes() {
@@ -36,18 +41,25 @@ function AppRoutes() {
     <Routes>
       <Route path="/oauth/callback" element={<OAuthCallback />} />
 
-      <Route path="/" element={<PublicRoute><LandingPage /></PublicRoute>} />
-      <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+      {/* Landing siempre pública */}
+      <Route path="/" element={<LandingPage />} />
+
+      {/* Auth — redirigen al dashboard si ya hay sesión */}
+      <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
 
-      <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-      <Route path="/create" element={<PrivateRoute><CreateQR /></PrivateRoute>} />
-      <Route path="/qr/:id" element={<PrivateRoute><QRDetail /></PrivateRoute>} />
-      <Route path="/campaigns" element={<PrivateRoute><Campaigns /></PrivateRoute>} />
-      <Route path="/campaigns/:id" element={<PrivateRoute><CampaignDetail /></PrivateRoute>} />
-      <Route path="/billing" element={<PrivateRoute><Billing /></PrivateRoute>} />
-      <Route path="/billing/success" element={<PrivateRoute><BillingSuccess /></PrivateRoute>} />
-      <Route path="/billing/cancel" element={<PrivateRoute><BillingCancel /></PrivateRoute>} />
+      {/* App privada */}
+      <Route path="/dashboard"           element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+      <Route path="/create"              element={<PrivateRoute><CreateQR /></PrivateRoute>} />
+      <Route path="/qr/:id"              element={<PrivateRoute><QRDetail /></PrivateRoute>} />
+      <Route path="/campaigns"           element={<PrivateRoute><Campaigns /></PrivateRoute>} />
+      <Route path="/campaigns/:id"       element={<PrivateRoute><CampaignDetail /></PrivateRoute>} />
+      <Route path="/billing"             element={<PrivateRoute><Billing /></PrivateRoute>} />
+      <Route path="/billing/success"     element={<PrivateRoute><BillingSuccess /></PrivateRoute>} />
+      <Route path="/billing/cancel"      element={<PrivateRoute><BillingCancel /></PrivateRoute>} />
+
+      {/* Admin — solo usuarios con is_admin=true */}
+      <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
