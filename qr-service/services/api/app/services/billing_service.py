@@ -1,7 +1,8 @@
 """
-Billing Service — Stripe multi-plan
+Billing Service — Stripe multi-plan con idempotencia de webhooks
 Planes: STARTER ($10), PRO ($20), BUSINESS ($30) — todos anuales
-OWASP: A08 — Verificación de firma en cada webhook
+OWASP A08: Verificación de firma + idempotencia (event_id único en DB)
+SWEBOK v4: Software Security — Data Integrity
 """
 from datetime import datetime, timezone
 from uuid import UUID
@@ -15,7 +16,9 @@ from app.core.config import settings
 from app.core.exceptions import (
     BillingException, InvalidPlanException, WebhookSignatureException,
 )
-from app.models.models import Subscription, SubscriptionPlan, SubscriptionStatus
+from app.models.models import (
+    Subscription, SubscriptionPlan, SubscriptionStatus, StripeEvent,
+)
 
 logger = structlog.get_logger(__name__)
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -40,7 +43,7 @@ class BillingService:
     ) -> dict:
         """
         Crea sesión de Stripe Checkout para el plan elegido.
-        Retorna URL de checkout y resumen del plan.
+        OWASP: El plan y el precio vienen de settings — nunca del frontend.
         """
         if plan not in PAID_PLANS:
             raise InvalidPlanException(plan)
@@ -57,8 +60,8 @@ class BillingService:
                 payment_method_types=["card"],
                 line_items=[{"price": price_id, "quantity": 1}],
                 mode="subscription",
-                success_url=f"{settings.BASE_URL}/billing/success?session_id={{CHECKOUT_SESSION_ID}}",
-                cancel_url=f"{settings.BASE_URL}/billing/cancel",
+                success_url=f"{settings.FRONTEND_URL}/billing/success?session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=f"{settings.FRONTEND_URL}/billing/cancel",
                 metadata={
                     "user_id": str(user_id),
                     "plan": plan,
@@ -83,11 +86,76 @@ class BillingService:
             logger.error("stripe_checkout_error", error=str(e), user_id=str(user_id))
             raise BillingException(str(e.user_message))
 
+    async def create_customer_portal_session(
+        self,
+        user_id: UUID,
+    ) -> dict:
+        """
+        Crea sesión del Customer Portal de Stripe.
+        Permite al usuario gestionar su plan, cancelar, ver facturas.
+        """
+        # Obtener stripe_customer_id desde la suscripción
+        sub = await self.db.scalar(
+            select(Subscription).where(
+                Subscription.user_id == user_id,
+                Subscription.stripe_customer_id.isnot(None),
+            ).order_by(Subscription.created_at.desc())
+        )
+
+        if not sub or not sub.stripe_customer_id:
+            raise BillingException("No se encontró una suscripción de Stripe activa.")
+
+        try:
+            portal_session = stripe.billing_portal.Session.create(
+                customer=sub.stripe_customer_id,
+                return_url=f"{settings.FRONTEND_URL}/billing",
+            )
+            return {"portal_url": portal_session.url}
+        except stripe.error.StripeError as e:
+            logger.error("stripe_portal_error", error=str(e), user_id=str(user_id))
+            raise BillingException(str(e.user_message))
+
+    async def get_invoices(self, user_id: UUID) -> list:
+        """Retorna el historial de facturas del usuario desde Stripe."""
+        sub = await self.db.scalar(
+            select(Subscription).where(
+                Subscription.user_id == user_id,
+                Subscription.stripe_customer_id.isnot(None),
+            ).order_by(Subscription.created_at.desc())
+        )
+
+        if not sub or not sub.stripe_customer_id:
+            return []
+
+        try:
+            invoices = stripe.Invoice.list(
+                customer=sub.stripe_customer_id,
+                limit=20,
+            )
+            return [
+                {
+                    "id": inv.id,
+                    "amount_paid": inv.amount_paid / 100,
+                    "currency": inv.currency.upper(),
+                    "status": inv.status,
+                    "date": datetime.fromtimestamp(inv.created, tz=timezone.utc).isoformat(),
+                    "invoice_pdf": inv.invoice_pdf,
+                    "hosted_invoice_url": inv.hosted_invoice_url,
+                }
+                for inv in invoices.data
+            ]
+        except stripe.error.StripeError as e:
+            logger.error("stripe_invoices_error", error=str(e))
+            return []
+
     async def handle_webhook(self, payload: bytes, signature: str) -> dict:
         """
         Procesa webhooks de Stripe.
-        OWASP A08: La firma SIEMPRE se verifica antes de procesar.
+        OWASP A08:
+          1. La firma SIEMPRE se verifica antes de procesar.
+          2. Idempotencia: event_id único en tabla stripe_events.
         """
+        # 1. Verificar firma
         try:
             event = stripe.Webhook.construct_event(
                 payload=payload,
@@ -98,21 +166,50 @@ class BillingService:
             logger.error("webhook_signature_invalid")
             raise WebhookSignatureException()
 
+        event_id = event["id"]
         event_type = event["type"]
-        logger.info("stripe_webhook_received", event_type=event_type, event_id=event["id"])
+
+        # 2. Idempotencia — verificar si ya fue procesado
+        existing = await self.db.scalar(
+            select(StripeEvent).where(StripeEvent.event_id == event_id)
+        )
+        if existing:
+            logger.info("webhook_already_processed", event_id=event_id, event_type=event_type)
+            return {"status": "already_processed", "event_id": event_id}
+
+        # 3. Registrar el evento ANTES de procesarlo (marca idempotente)
+        stripe_event_record = StripeEvent(
+            event_id=event_id,
+            event_type=event_type,
+            processed_at=datetime.now(timezone.utc),
+        )
+        self.db.add(stripe_event_record)
+        await self.db.flush()  # Reservar el event_id sin hacer commit aún
+
+        logger.info("stripe_webhook_received", event_type=event_type, event_id=event_id)
 
         handlers = {
-            "checkout.session.completed":       self._handle_checkout_completed,
-            "invoice.payment_succeeded":        self._handle_payment_succeeded,
-            "invoice.payment_failed":           self._handle_payment_failed,
-            "customer.subscription.deleted":    self._handle_subscription_deleted,
+            "checkout.session.completed":    self._handle_checkout_completed,
+            "invoice.payment_succeeded":     self._handle_payment_succeeded,
+            "invoice.payment_failed":        self._handle_payment_failed,
+            "customer.subscription.deleted": self._handle_subscription_deleted,
         }
 
         handler = handlers.get(event_type)
         if handler:
-            await handler(event["data"]["object"])
+            try:
+                await handler(event["data"]["object"])
+                stripe_event_record.status = "processed"
+            except Exception as exc:
+                stripe_event_record.status = "failed"
+                stripe_event_record.error = str(exc)[:500]
+                logger.error("webhook_handler_failed", event_type=event_type, error=str(exc))
+                raise
+        else:
+            stripe_event_record.status = "ignored"
 
-        return {"status": "processed", "event_type": event_type}
+        await self.db.commit()
+        return {"status": "processed", "event_type": event_type, "event_id": event_id}
 
     async def get_plans_info(self) -> list:
         """Retorna información pública de todos los planes."""
@@ -120,22 +217,28 @@ class BillingService:
         from app.models.models import SubscriptionPlan
 
         plans = []
-        for plan_enum in [SubscriptionPlan.FREE, SubscriptionPlan.STARTER, SubscriptionPlan.PRO, SubscriptionPlan.BUSINESS]:
+        for plan_enum in [
+            SubscriptionPlan.FREE,
+            SubscriptionPlan.STARTER,
+            SubscriptionPlan.PRO,
+            SubscriptionPlan.BUSINESS,
+        ]:
             f = PLAN_FEATURES[plan_enum]
             plans.append({
-                "plan":        plan_enum.value,
-                "price_usd":   f["price_usd"],
-                "qr_quota":    f["qr_quota"],
+                "plan":         plan_enum.value,
+                "price_usd":    f["price_usd"],
+                "qr_quota":     f["qr_quota"],
                 "price_per_qr": round(f["price_usd"] / f["qr_quota"], 2) if f["qr_quota"] > 0 else 0,
-                "description": f["description"],
-                "analytics":   f["analytics"],
-                "custom_logo": f["custom_logo"],
-                "support":     f["support"],
-                "is_popular":  plan_enum == SubscriptionPlan.BUSINESS,  # Badge "Mejor valor"
+                "description":  f["description"],
+                "analytics":    f["analytics"],
+                "custom_logo":  f["custom_logo"],
+                "custom_colors": f["custom_colors"],
+                "support":      f["support"],
+                "is_popular":   plan_enum == SubscriptionPlan.BUSINESS,
             })
         return plans
 
-    # ── Webhook handlers ──────────────────────────────────────
+    # ── Webhook handlers privados ──────────────────────────────
 
     async def _handle_checkout_completed(self, session: dict) -> None:
         user_id = session.get("metadata", {}).get("user_id")
@@ -164,7 +267,8 @@ class BillingService:
         # Encolar email de confirmación
         try:
             from app.tasks.subscription_tasks import send_payment_confirmation_email
-            user = await self.db.get(__import__("app.models.models", fromlist=["User"]).User, UUID(user_id))
+            from app.models.models import User
+            user = await self.db.get(User, UUID(user_id))
             if user:
                 send_payment_confirmation_email.delay(
                     user_email=user.email,
@@ -192,7 +296,6 @@ class BillingService:
         if sub:
             sub.expires_at = sub.expires_at + timedelta(days=365)
             sub.status = SubscriptionStatus.ACTIVE
-            await self.db.commit()
             logger.info("subscription_renewed_annually", subscription_id=str(sub.id))
 
     async def _handle_payment_failed(self, invoice: dict) -> None:
@@ -204,7 +307,6 @@ class BillingService:
         )
         if sub:
             sub.status = SubscriptionStatus.EXPIRED
-            await self.db.commit()
             logger.warning("subscription_payment_failed", subscription_id=str(sub.id))
 
     async def _handle_subscription_deleted(self, stripe_sub: dict) -> None:
@@ -215,7 +317,6 @@ class BillingService:
         )
         if sub:
             sub.status = SubscriptionStatus.CANCELLED
-            await self.db.commit()
             logger.info("subscription_cancelled", subscription_id=str(sub.id))
 
     async def _get_or_create_stripe_customer(self, user_id: UUID, email: str) -> str:

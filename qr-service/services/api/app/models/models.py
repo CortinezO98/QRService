@@ -1,10 +1,13 @@
 """
 Database Models — SQLAlchemy 2.0
-Nuevo modelo de negocio:
+Modelo de negocio:
     FREE:     1 QR/mes, renueva manualmente cada 30 días
     STARTER:  5 QR totales → $10/año
     PRO:      15 QR totales → $20/año
     BUSINESS: 30 QR totales → $30/año
+
+Sprint 1: Agrega StripeEvent para idempotencia de webhooks.
+          Elimina referencia a plan ANNUAL.
 """
 import uuid
 from datetime import datetime, timezone
@@ -45,8 +48,8 @@ class SubscriptionStatus(str, PyEnum):
 
 class QRStatus(str, PyEnum):
     ACTIVE   = "active"
-    INACTIVE = "inactive"    # FREE plan: no renovó el mes
-    EXPIRED  = "expired"     # Suscripción venció
+    INACTIVE = "inactive"   # FREE plan: no renovó el mes
+    EXPIRED  = "expired"    # Suscripción venció
 
 
 # ── Mixins ────────────────────────────────────────────────────
@@ -80,9 +83,8 @@ class User(TimestampMixin, Base):
 class Subscription(TimestampMixin, Base):
     """
     Suscripción del usuario.
-    FREE:     expires_at = 30 días, se puede renovar gratis mes a mes.
-              qr_quota = 1 (un QR activo a la vez)
-    STARTER:  qr_quota = 5  (permanentes, no expiran con el tiempo)
+    FREE:     expires_at = 30 días, renovar gratis mes a mes.
+    STARTER:  qr_quota = 5  (permanentes)
     PRO:      qr_quota = 15
     BUSINESS: qr_quota = 30
     """
@@ -138,23 +140,20 @@ class QRCode(TimestampMixin, Base):
     title: Mapped[Optional[str]] = mapped_column(String(255))
     destination_url: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # ── Tipo y payload (migración 004) ────────────────────────
     qr_type: Mapped[str] = mapped_column(
-        Enum("url", "text", "email", "phone", "whatsapp", "wifi", "sms", "vcard",
+        Enum(
+            "url", "text", "email", "phone", "whatsapp", "wifi", "sms", "vcard",
             "maps", "pdf", "youtube", "spotify", "facebook", "instagram", "twitter",
             "tiktok", "linkedin", "telegram", "calendar", "paypal", "crypto", "reddit",
             "amazon", "wechat", "snapchat", "venmo", "barcode2d", "upi", "office365",
             "googledoc", "googleforms", "googlesheets", "googlereview", "logo", "shaped",
             "booking", "etsy", "png", "pptx", "excel", "archivo", "linktree", "line",
             "kakaotalk", "pcr", "video",
-            name="qrtype", create_type=False),
+            name="qrtype", create_type=False,
+        ),
         nullable=False, server_default="url"
     )
-    payload: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True, comment="Datos estructurados según el tipo de QR"
-    )
-    # ──────────────────────────────────────────────────────────
-
+    payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     style_config: Mapped[Optional[dict]] = mapped_column(JSONB, default=dict)
     scan_count: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[QRStatus] = mapped_column(
@@ -183,6 +182,9 @@ class QRScan(Base):
     user_agent: Mapped[Optional[str]] = mapped_column(String(512))
     country_code: Mapped[Optional[str]] = mapped_column(String(2))
     referer: Mapped[Optional[str]] = mapped_column(String(512))
+    device_type: Mapped[Optional[str]] = mapped_column(String(32))   # mobile/desktop/tablet
+    os_family: Mapped[Optional[str]] = mapped_column(String(64))     # iOS/Android/Windows/macOS
+    browser_family: Mapped[Optional[str]] = mapped_column(String(64)) # Chrome/Safari/Firefox
     scanned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, server_default=func.now(), index=True
     )
@@ -202,3 +204,20 @@ class RefreshToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     device_info: Mapped[Optional[str]] = mapped_column(String(512))
+
+
+class StripeEvent(Base):
+    """
+    Registro de webhooks de Stripe procesados.
+    OWASP A08: Idempotencia — event_id único previene procesamiento doble.
+    """
+    __tablename__ = "stripe_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="processed"
+    )  # processed / failed / ignored
+    error: Mapped[Optional[str]] = mapped_column(Text)

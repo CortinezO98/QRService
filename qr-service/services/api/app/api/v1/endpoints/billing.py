@@ -1,5 +1,6 @@
 """
-Billing Endpoints — Multi-plan + renovación FREE
+Billing Endpoints — Multi-plan + renovación FREE + Customer Portal
+OWASP A08: Webhook con firma verificada + idempotencia
 """
 from fastapi import APIRouter, Depends, Header, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,8 +38,8 @@ async def create_checkout(
     db: AsyncSession = Depends(get_db),
 ) -> CheckoutResponse:
     """
-    Crea sesión de Stripe Checkout para el plan elegido.
-    Planes disponibles: starter ($10), pro ($20), business ($30).
+    Crea sesión de Stripe Checkout.
+    El plan y precio vienen de settings — nunca del frontend.
     """
     service = BillingService(db)
     result = await service.create_checkout_session(
@@ -49,6 +50,29 @@ async def create_checkout(
     return CheckoutResponse(**result)
 
 
+@router.post("/customer-portal")
+async def customer_portal(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Genera URL del Stripe Customer Portal.
+    Permite cancelar, cambiar plan, ver facturas directamente en Stripe.
+    """
+    service = BillingService(db)
+    return await service.create_customer_portal_session(current_user.id)
+
+
+@router.get("/invoices")
+async def get_invoices(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list:
+    """Historial de pagos y facturas desde Stripe."""
+    service = BillingService(db)
+    return await service.get_invoices(current_user.id)
+
+
 @router.post("/renew-free", response_model=SubscriptionResponse)
 async def renew_free_subscription(
     current_user: User = Depends(get_current_user),
@@ -56,21 +80,20 @@ async def renew_free_subscription(
 ) -> SubscriptionResponse:
     """
     Renovación mensual gratuita para plan FREE.
-    El usuario debe hacer clic aquí cada mes para mantener su QR activo.
-    Si no renueva, el QR se desactiva a los 30 días.
+    Fricción intencional: el usuario debe hacer clic cada 30 días.
     """
     service = SubscriptionService(db)
     sub = await service.renew_free_subscription(current_user.id)
     return SubscriptionResponse.from_model(sub)
 
 
-@router.get("/status", response_model=dict)
+@router.get("/status")
 async def billing_status(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    Estado completo de la suscripción actual:
+    Estado completo de la suscripción:
     plan, días restantes, QR usados/disponibles, opciones de upgrade.
     """
     service = SubscriptionService(db)
@@ -84,8 +107,9 @@ async def stripe_webhook(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    Webhook de Stripe — SIEMPRE verifica la firma antes de procesar.
-    OWASP A08: Sin firma válida = 400.
+    Webhook de Stripe con:
+    1. Verificación de firma HMAC (OWASP A08)
+    2. Idempotencia por event_id (evita doble procesamiento)
     """
     if not stripe_signature:
         raise WebhookSignatureException()

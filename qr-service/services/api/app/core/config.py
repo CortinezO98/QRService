@@ -1,161 +1,163 @@
 """
-Application Configuration — Nuevo modelo de precios
-FREE:     $0     — 1 QR/mes, renovación manual
-STARTER:  $10/año — 5 QR totales
-PRO:      $20/año — 15 QR totales
-BUSINESS: $30/año — 30 QR totales
+Settings — Pydantic v2 Settings Management
+SWEBOK v4: Software Configuration Management
+OWASP A05: Security Misconfiguration Prevention
+Sprint 1: Eliminado STRIPE_ANNUAL_PRICE_ID, agregados por plan.
+          FRONTEND_URL para cookies OAuth y redirects.
 """
+import json
 from functools import lru_cache
 from typing import List
-from pydantic import AnyHttpUrl, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=True,
-        extra="forbid",
-    )
 
     # ── App ───────────────────────────────────────────────────
-    APP_VERSION: str = "2.0.0"
-    ENVIRONMENT: str = "production"
+    APP_VERSION: str = "2.1.0"
+    ENVIRONMENT: str = "development"
     DEBUG: bool = False
-    ALLOWED_HOSTS: List[str] = ["*"]
-    CORS_ORIGINS: List[AnyHttpUrl] = []
-    BASE_URL: str = "http://localhost:8000"
 
     # ── Security ──────────────────────────────────────────────
     SECRET_KEY: str
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     BCRYPT_ROUNDS: int = 12
 
-    # ── Database ──────────────────────────────────────────────
-    POSTGRES_HOST: str
+    # ── CORS / Hosts ──────────────────────────────────────────
+    CORS_ORIGINS: List[str] = ["http://localhost:5200", "http://localhost:3000"]
+    ALLOWED_HOSTS: List[str] = ["*"]
+
+    # ── URLs ──────────────────────────────────────────────────
+    BASE_URL: str = "http://localhost:7000"
+    FRONTEND_URL: str = "http://localhost:5200"
+
+    # ── PostgreSQL ────────────────────────────────────────────
+    POSTGRES_HOST: str = "db"
     POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str
-    POSTGRES_USER: str
+    POSTGRES_DB: str = "qr_service"
+    POSTGRES_USER: str = "qr_user"
     POSTGRES_PASSWORD: str
 
-    @property
-    def DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-
-    @property
-    def DATABASE_URL_SYNC(self) -> str:
-        return f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-
     # ── Redis ─────────────────────────────────────────────────
-    REDIS_HOST: str
+    REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
-    REDIS_PASSWORD: str
+    REDIS_PASSWORD: str = ""
+    REDIS_DB: int = 0
 
-    @property
-    def REDIS_URL(self) -> str:
-        return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/0"
+    # ── Stripe — modelo 4 planes ──────────────────────────────
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_STARTER_PRICE_ID: str = ""
+    STRIPE_PRO_PRICE_ID: str = ""
+    STRIPE_BUSINESS_PRICE_ID: str = ""
 
-    @property
-    def CELERY_BROKER_URL(self) -> str:
-        return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/1"
+    # ── OAuth Google ──────────────────────────────────────────
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:7000/api/v1/auth/google/callback"
 
-    # ── Rate Limiting ─────────────────────────────────────────
-    RATE_LIMIT_FREE_PER_MINUTE: int = 10
-    RATE_LIMIT_PAID_PER_MINUTE: int = 60
-    RATE_LIMIT_ANON_PER_MINUTE: int = 5
-
-    # ── Plan: FREE ────────────────────────────────────────────
-    FREE_PLAN_QR_QUOTA: int = 1          # 1 QR activo por mes
-    FREE_PLAN_DURATION_DAYS: int = 30    # Debe renovar cada 30 días
-    FREE_QR_EXPIRY_DAYS: int = 30        # El QR expira con la suscripción
-
-    # ── Plan: STARTER — $10/año ───────────────────────────────
-    STARTER_PLAN_QR_QUOTA: int = 5
-    STARTER_PLAN_PRICE_USD: float = 10.00
-    STARTER_PLAN_DURATION_DAYS: int = 365
-
-    # ── Plan: PRO — $20/año ───────────────────────────────────
-    PRO_PLAN_QR_QUOTA: int = 15
-    PRO_PLAN_PRICE_USD: float = 20.00
-    PRO_PLAN_DURATION_DAYS: int = 365
-
-    # ── Plan: BUSINESS — $30/año ──────────────────────────────
-    BUSINESS_PLAN_QR_QUOTA: int = 30
-    BUSINESS_PLAN_PRICE_USD: float = 30.00
-    BUSINESS_PLAN_DURATION_DAYS: int = 365
-
-    # ── Stripe Price IDs ──────────────────────────────────────
-    STRIPE_SECRET_KEY: str
-    STRIPE_WEBHOOK_SECRET: str
-    STRIPE_STARTER_PRICE_ID: str
-    STRIPE_PRO_PRICE_ID: str
-    STRIPE_BUSINESS_PRICE_ID: str
+    # ── OAuth Facebook ────────────────────────────────────────
+    FACEBOOK_CLIENT_ID: str = ""
+    FACEBOOK_CLIENT_SECRET: str = ""
+    FACEBOOK_REDIRECT_URI: str = "http://localhost:7000/api/v1/auth/facebook/callback"
 
     # ── Email ─────────────────────────────────────────────────
-    SMTP_HOST: str = ""
+    SMTP_HOST: str = "smtp.sendgrid.net"
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     EMAILS_FROM: str = "noreply@qrservice.com"
     EMAILS_FROM_NAME: str = "QR Service"
-    
-    
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:7000/api/v1/auth/google/callback"
-    FACEBOOK_CLIENT_ID: str = ""
-    FACEBOOK_CLIENT_SECRET: str = ""
-    FACEBOOK_REDIRECT_URI: str = "http://localhost:7000/api/v1/auth/facebook/callback"
-    FRONTEND_URL: str = "http://localhost:5200"
+
+    # ── Planes FREE ───────────────────────────────────────────
+    FREE_PLAN_QR_QUOTA: int = 1
+    FREE_PLAN_DURATION_DAYS: int = 30
+
+    # ── Rate Limiting ─────────────────────────────────────────
+    RATE_LIMIT_ANON_PER_MINUTE: int = 20
+    RATE_LIMIT_FREE_PER_MINUTE: int = 60
 
     # ── Sentry ────────────────────────────────────────────────
     SENTRY_DSN: str = ""
 
-    # ── Validators ────────────────────────────────────────────
-    @field_validator("SECRET_KEY")
-    @classmethod
-    def secret_key_must_be_strong(cls, v: str) -> str:
-        if len(v) < 32:
-            raise ValueError("SECRET_KEY must be at least 32 characters")
-        return v
+    # ── Computed ──────────────────────────────────────────────
 
-    @model_validator(mode="after")
-    def debug_not_in_production(self) -> "Settings":
-        if self.ENVIRONMENT == "production" and self.DEBUG:
-            raise ValueError("DEBUG must be False in production!")
-        return self
+    @property
+    def DATABASE_URL(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
 
-    def get_plan_quota(self, plan: str) -> int:
-        """Retorna cuota de QR según el plan."""
-        return {
-            "free":     self.FREE_PLAN_QR_QUOTA,
-            "starter":  self.STARTER_PLAN_QR_QUOTA,
-            "pro":      self.PRO_PLAN_QR_QUOTA,
-            "business": self.BUSINESS_PLAN_QR_QUOTA,
-        }.get(plan, 1)
+    @property
+    def REDIS_URL(self) -> str:
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
-    def get_plan_price(self, plan: str) -> float:
-        return {
-            "free":     0.00,
-            "starter":  self.STARTER_PLAN_PRICE_USD,
-            "pro":      self.PRO_PLAN_PRICE_USD,
-            "business": self.BUSINESS_PLAN_PRICE_USD,
-        }.get(plan, 0.00)
+    @property
+    def CELERY_BROKER_URL(self) -> str:
+        return self.REDIS_URL
+
+    # ── Stripe helpers ────────────────────────────────────────
+
+    _STRIPE_PRICE_MAP = {
+        "starter":  "STRIPE_STARTER_PRICE_ID",
+        "pro":      "STRIPE_PRO_PRICE_ID",
+        "business": "STRIPE_BUSINESS_PRICE_ID",
+    }
+
+    _PLAN_PRICES = {
+        "starter":  10.00,
+        "pro":      20.00,
+        "business": 30.00,
+    }
+
+    _PLAN_QUOTAS = {
+        "starter":  5,
+        "pro":      15,
+        "business": 30,
+    }
 
     def get_stripe_price_id(self, plan: str) -> str:
-        return {
-            "starter":  self.STRIPE_STARTER_PRICE_ID,
-            "pro":      self.STRIPE_PRO_PRICE_ID,
-            "business": self.STRIPE_BUSINESS_PRICE_ID,
-        }.get(plan, "")
+        attr = self._STRIPE_PRICE_MAP.get(plan)
+        if not attr:
+            raise ValueError(f"Unknown plan: {plan}")
+        return getattr(self, attr)
+
+    def get_plan_price(self, plan: str) -> float:
+        return self._PLAN_PRICES.get(plan, 0.0)
+
+    def get_plan_quota(self, plan: str) -> int:
+        return self._PLAN_QUOTAS.get(plan, 0)
+
+    # ── Validators ────────────────────────────────────────────
+
+    @field_validator("CORS_ORIGINS", "ALLOWED_HOSTS", mode="before")
+    @classmethod
+    def parse_json_list(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except Exception:
+                return [v]
+        return v
+
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": True,
+        "extra": "ignore",
+    }
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     return Settings()
 
 
-settings = get_settings()
+settings: Settings = get_settings()

@@ -1,6 +1,7 @@
 """
 QR Code Endpoints
 OWASP A01: Ownership checks enforced inside QRService
+Sprint 1: update_qr delegado al service (no lógica en endpoint)
 """
 from uuid import UUID
 
@@ -9,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_active_subscription
 from app.core.config import settings
-from app.core.exceptions import QRNotFoundException
 from app.db.session import get_db
 from app.models.models import Subscription, User
 from app.schemas.qr import (
@@ -25,6 +25,13 @@ from app.services.qr_service import QRService
 router = APIRouter()
 
 
+@router.get("/types")
+async def get_qr_types() -> list:
+    """Catálogo de tipos de QR disponibles. Endpoint público."""
+    service = QRService(None)
+    return await service.get_qr_types()
+
+
 @router.get("/", response_model=QRListResponse)
 async def list_qr_codes(
     page: int = Query(default=1, ge=1),
@@ -33,34 +40,17 @@ async def list_qr_codes(
     db: AsyncSession = Depends(get_db),
 ) -> QRListResponse:
     service = QRService(db)
-
     skip = (page - 1) * page_size
     qr_codes = await service.list_qr_codes(
         user_id=current_user.id,
         skip=skip,
         limit=page_size,
     )
-
-    items = [
-        QRResponse.from_model(qr, settings.BASE_URL)
-        for qr in qr_codes
-    ]
-
-    total = len(qr_codes)
-
-    return QRListResponse(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size,
-    )
+    items = [QRResponse.from_model(qr, settings.BASE_URL) for qr in qr_codes]
+    return QRListResponse(items=items, total=len(items), page=page, page_size=page_size)
 
 
-@router.post(
-    "/",
-    response_model=QRResponse,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("/", response_model=QRResponse, status_code=status.HTTP_201_CREATED)
 async def create_qr(
     payload: QRCreateRequest,
     current_user: User = Depends(get_current_user),
@@ -68,12 +58,7 @@ async def create_qr(
     db: AsyncSession = Depends(get_db),
 ) -> QRResponse:
     service = QRService(db)
-
-    qr = await service.create_qr(
-        user_id=current_user.id,
-        request=payload,
-    )
-
+    qr = await service.create_qr(user_id=current_user.id, request=payload)
     return QRResponse.from_model(qr, settings.BASE_URL)
 
 
@@ -84,12 +69,7 @@ async def get_qr_detail(
     db: AsyncSession = Depends(get_db),
 ) -> QRResponse:
     service = QRService(db)
-
-    qr = await service._get_qr_owned_by(
-        qr_id=qr_id,
-        user_id=current_user.id,
-    )
-
+    qr = await service._get_qr_owned_by(qr_id=qr_id, user_id=current_user.id)
     return QRResponse.from_model(qr, settings.BASE_URL)
 
 
@@ -102,28 +82,8 @@ async def update_qr(
     db: AsyncSession = Depends(get_db),
 ) -> QRResponse:
     service = QRService(db)
-
-    qr = await service._get_qr_owned_by(
-        qr_id=qr_id,
-        user_id=current_user.id,
-    )
-
-    if payload.destination_url is not None:
-        service._validate_url(payload.destination_url)
-        qr.destination_url = payload.destination_url
-
-    if payload.title is not None:
-        qr.title = payload.title
-
-    if payload.style is not None:
-        qr.style_config = payload.style.model_dump()
-
-    if payload.is_active is not None:
-        qr.is_active = payload.is_active
-
-    await db.commit()
-    await db.refresh(qr)
-
+    update_data = payload.model_dump(exclude_unset=True)
+    qr = await service.update_qr(qr_id=qr_id, user_id=current_user.id, payload=update_data)
     return QRResponse.from_model(qr, settings.BASE_URL)
 
 
@@ -134,34 +94,25 @@ async def delete_qr(
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
     service = QRService(db)
-
-    await service.delete_qr(
-        qr_id=qr_id,
-        user_id=current_user.id,
-    )
-
+    await service.delete_qr(qr_id=qr_id, user_id=current_user.id)
     return MessageResponse(message="QR code deleted successfully.")
 
 
 @router.get("/{qr_id}/image")
 async def get_qr_image(
     qr_id: UUID,
+    size: int = Query(default=512, ge=128, le=2048),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     service = QRService(db)
-
-    image_bytes = await service.generate_image(
-        qr_id=qr_id,
-        user_id=current_user.id,
-        fmt="png",
-    )
-
+    image_bytes = await service.generate_image(qr_id=qr_id, user_id=current_user.id, fmt="png")
+    qr = await service._get_qr_owned_by(qr_id=qr_id, user_id=current_user.id)
     return Response(
         content=image_bytes,
         media_type="image/png",
         headers={
-            "Content-Disposition": f'attachment; filename="qr-{qr_id}.png"',
+            "Content-Disposition": f'attachment; filename="qr-{qr.short_code}.png"',
             "Cache-Control": "private, max-age=300",
         },
     )
@@ -174,10 +125,5 @@ async def get_qr_analytics(
     db: AsyncSession = Depends(get_db),
 ) -> QRAnalyticsResponse:
     service = QRService(db)
-
-    analytics = await service.get_analytics(
-        qr_id=qr_id,
-        user_id=current_user.id,
-    )
-
+    analytics = await service.get_analytics(qr_id=qr_id, user_id=current_user.id)
     return QRAnalyticsResponse(**analytics)
