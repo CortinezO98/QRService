@@ -1,9 +1,5 @@
 """
-Pydantic Schemas — Request / Response models
-SWEBOK v4: Software Construction — Input Validation
-OWASP A03: All external input validated here before reaching services
-Sprint 1: Eliminado RefreshRequest del body (refresh usa cookie).
-          Agregado QRUpdateRequest con campo status.
+Pydantic Schemas — Sprint 3: campaign_id en QRCreateRequest y QRResponse.
 """
 from __future__ import annotations
 
@@ -11,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field
 
 
 # ── Auth ──────────────────────────────────────────────────────
@@ -28,7 +24,6 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    """Kept for backward compat with tests; production uses cookie."""
     refresh_token: str = Field(default="")
 
 
@@ -59,8 +54,8 @@ class MessageResponse(BaseModel):
 class QRStyleConfig(BaseModel):
     foreground_color: str = Field(default="#000000", pattern=r"^#[0-9A-Fa-f]{6}$")
     background_color: str = Field(default="#ffffff", pattern=r"^#[0-9A-Fa-f]{6}$")
-    module_style: str = Field(default="square")     # square | rounded | circle
-    error_correction: str = Field(default="M")      # L | M | Q | H
+    module_style: str = Field(default="square")
+    error_correction: str = Field(default="M")
     box_size: int = Field(default=10, ge=1, le=50)
     border: int = Field(default=4, ge=0, le=20)
 
@@ -72,8 +67,9 @@ class QRCreateRequest(BaseModel):
     title: Optional[str] = Field(default=None, max_length=255)
     payload: Optional[Dict[str, Any]] = None
     style: Optional[QRStyleConfig] = None
-    # Backward compat
     destination_url: Optional[str] = Field(default=None, max_length=2048)
+    # Sprint 3
+    campaign_id: Optional[uuid.UUID] = None
 
 
 class QRUpdateRequest(BaseModel):
@@ -82,6 +78,8 @@ class QRUpdateRequest(BaseModel):
     style: Optional[QRStyleConfig] = None
     is_active: Optional[bool] = None
     status: Optional[str] = Field(default=None, pattern=r"^(active|inactive)$")
+    # Sprint 3
+    campaign_id: Optional[uuid.UUID] = None
 
 
 # ── QR Responses ──────────────────────────────────────────────
@@ -100,27 +98,29 @@ class QRResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     redirect_url: Optional[str] = None
+    # Sprint 3
+    campaign_id: Optional[uuid.UUID] = None
 
     model_config = {"from_attributes": True}
 
     @classmethod
     def from_model(cls, qr, base_url: str) -> "QRResponse":
-        data = {
-            "id": qr.id,
-            "short_code": qr.short_code,
-            "title": qr.title,
-            "destination_url": qr.destination_url,
-            "qr_type": getattr(qr, "qr_type", "url"),
-            "payload": getattr(qr, "payload", None),
-            "style_config": qr.style_config,
-            "scan_count": qr.scan_count,
-            "status": qr.status.value if hasattr(qr.status, "value") else qr.status,
-            "expires_at": qr.expires_at,
-            "created_at": qr.created_at,
-            "updated_at": qr.updated_at,
-            "redirect_url": f"{base_url}/r/{qr.short_code}",
-        }
-        return cls(**data)
+        return cls(
+            id=qr.id,
+            short_code=qr.short_code,
+            title=qr.title,
+            destination_url=qr.destination_url,
+            qr_type=getattr(qr, "qr_type", "url"),
+            payload=getattr(qr, "payload", None),
+            style_config=qr.style_config,
+            scan_count=qr.scan_count,
+            status=qr.status.value if hasattr(qr.status, "value") else qr.status,
+            expires_at=qr.expires_at,
+            created_at=qr.created_at,
+            updated_at=qr.updated_at,
+            redirect_url=f"{base_url}/r/{qr.short_code}",
+            campaign_id=getattr(qr, "campaign_id", None),
+        )
 
 
 class QRListResponse(BaseModel):

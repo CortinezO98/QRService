@@ -1,6 +1,5 @@
 /**
- * App.jsx — Router principal
- * Sprint 2: Agrega /qr/:id, /billing/success, /billing/cancel
+ * App.jsx — Sprint 3: rutas de campañas.
  */
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx'
@@ -9,6 +8,8 @@ import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import CreateQR from './pages/CreateQR'
 import QRDetail from './pages/QRDetail'
+import Campaigns from './pages/Campaigns'
+import CampaignDetail from './pages/CampaignDetail'
 import Billing from './pages/Billing'
 import BillingSuccess from './pages/BillingSuccess'
 import BillingCancel from './pages/BillingCancel'
@@ -34,21 +35,20 @@ function AppRoutes() {
     <>
       {user && <Navbar />}
       <Routes>
-        {/* OAuth callback — siempre accesible */}
         <Route path="/oauth/callback" element={<OAuthCallback />} />
 
-        {/* Públicas */}
         <Route path="/"         element={user ? <Navigate to="/dashboard" /> : <LandingPage />} />
         <Route path="/login"    element={user ? <Navigate to="/dashboard" /> : <Login />} />
         <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
 
-        {/* Protegidas */}
-        <Route path="/dashboard"        element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-        <Route path="/create"           element={<PrivateRoute><CreateQR /></PrivateRoute>} />
-        <Route path="/qr/:id"           element={<PrivateRoute><QRDetail /></PrivateRoute>} />
-        <Route path="/billing"          element={<PrivateRoute><Billing /></PrivateRoute>} />
-        <Route path="/billing/success"  element={<PrivateRoute><BillingSuccess /></PrivateRoute>} />
-        <Route path="/billing/cancel"   element={<PrivateRoute><BillingCancel /></PrivateRoute>} />
+        <Route path="/dashboard"          element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+        <Route path="/create"             element={<PrivateRoute><CreateQR /></PrivateRoute>} />
+        <Route path="/qr/:id"             element={<PrivateRoute><QRDetail /></PrivateRoute>} />
+        <Route path="/campaigns"          element={<PrivateRoute><Campaigns /></PrivateRoute>} />
+        <Route path="/campaigns/:id"      element={<PrivateRoute><CampaignDetail /></PrivateRoute>} />
+        <Route path="/billing"            element={<PrivateRoute><Billing /></PrivateRoute>} />
+        <Route path="/billing/success"    element={<PrivateRoute><BillingSuccess /></PrivateRoute>} />
+        <Route path="/billing/cancel"     element={<PrivateRoute><BillingCancel /></PrivateRoute>} />
 
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

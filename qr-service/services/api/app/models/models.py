@@ -1,13 +1,6 @@
 """
 Database Models — SQLAlchemy 2.0
-Modelo de negocio:
-    FREE:     1 QR/mes, renueva manualmente cada 30 días
-    STARTER:  5 QR totales → $10/año
-    PRO:      15 QR totales → $20/año
-    BUSINESS: 30 QR totales → $30/año
-
-Sprint 1: Agrega StripeEvent para idempotencia de webhooks.
-          Elimina referencia a plan ANNUAL.
+Sprint 3: Agrega Campaign y campaign_id en QRCode.
 """
 import uuid
 from datetime import datetime, timezone
@@ -33,10 +26,10 @@ class Base(DeclarativeBase):
 # ── Enums ─────────────────────────────────────────────────────
 
 class SubscriptionPlan(str, PyEnum):
-    FREE     = "free"      # $0  — 1 QR/mes, renovación manual
-    STARTER  = "starter"   # $10/año — 5 QR totales
-    PRO      = "pro"       # $20/año — 15 QR totales
-    BUSINESS = "business"  # $30/año — 30 QR totales
+    FREE     = "free"
+    STARTER  = "starter"
+    PRO      = "pro"
+    BUSINESS = "business"
 
 
 class SubscriptionStatus(str, PyEnum):
@@ -48,8 +41,8 @@ class SubscriptionStatus(str, PyEnum):
 
 class QRStatus(str, PyEnum):
     ACTIVE   = "active"
-    INACTIVE = "inactive"   # FREE plan: no renovó el mes
-    EXPIRED  = "expired"    # Suscripción venció
+    INACTIVE = "inactive"
+    EXPIRED  = "expired"
 
 
 # ── Mixins ────────────────────────────────────────────────────
@@ -78,16 +71,10 @@ class User(TimestampMixin, Base):
 
     subscriptions: Mapped[List["Subscription"]] = relationship(back_populates="user")
     qr_codes: Mapped[List["QRCode"]] = relationship(back_populates="user")
+    campaigns: Mapped[List["Campaign"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Subscription(TimestampMixin, Base):
-    """
-    Suscripción del usuario.
-    FREE:     expires_at = 30 días, renovar gratis mes a mes.
-    STARTER:  qr_quota = 5  (permanentes)
-    PRO:      qr_quota = 15
-    BUSINESS: qr_quota = 30
-    """
     __tablename__ = "subscriptions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -126,6 +113,29 @@ class Subscription(TimestampMixin, Base):
         return self.plan == SubscriptionPlan.FREE
 
 
+class Campaign(TimestampMixin, Base):
+    """
+    Campaña / Carpeta para agrupar QR codes.
+    Sprint 3: Diferenciador de producto para STARTER, PRO y BUSINESS.
+    """
+    __tablename__ = "campaigns"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    color: Mapped[str] = mapped_column(String(7), default="#6366f1")  # hex color
+
+    user: Mapped["User"] = relationship(back_populates="campaigns")
+    qr_codes: Mapped[List["QRCode"]] = relationship(back_populates="campaign")
+
+    __table_args__ = (
+        Index("ix_campaigns_user_id", "user_id"),
+    )
+
+
 class QRCode(TimestampMixin, Base):
     __tablename__ = "qr_codes"
 
@@ -135,6 +145,10 @@ class QRCode(TimestampMixin, Base):
     )
     subscription_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("subscriptions.id"), nullable=False
+    )
+    # Sprint 3: campaign_id opcional
+    campaign_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True, index=True
     )
     short_code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False, index=True)
     title: Mapped[Optional[str]] = mapped_column(String(255))
@@ -163,11 +177,13 @@ class QRCode(TimestampMixin, Base):
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship(back_populates="qr_codes")
+    campaign: Mapped[Optional["Campaign"]] = relationship(back_populates="qr_codes")
     scans: Mapped[List["QRScan"]] = relationship(back_populates="qr_code", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_qr_codes_user_active", "user_id", "status"),
         Index("ix_qr_codes_short_code", "short_code"),
+        Index("ix_qr_codes_campaign_id", "campaign_id"),
     )
 
 
@@ -182,9 +198,9 @@ class QRScan(Base):
     user_agent: Mapped[Optional[str]] = mapped_column(String(512))
     country_code: Mapped[Optional[str]] = mapped_column(String(2))
     referer: Mapped[Optional[str]] = mapped_column(String(512))
-    device_type: Mapped[Optional[str]] = mapped_column(String(32))   # mobile/desktop/tablet
-    os_family: Mapped[Optional[str]] = mapped_column(String(64))     # iOS/Android/Windows/macOS
-    browser_family: Mapped[Optional[str]] = mapped_column(String(64)) # Chrome/Safari/Firefox
+    device_type: Mapped[Optional[str]] = mapped_column(String(32))
+    os_family: Mapped[Optional[str]] = mapped_column(String(64))
+    browser_family: Mapped[Optional[str]] = mapped_column(String(64))
     scanned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, server_default=func.now(), index=True
     )
@@ -207,17 +223,11 @@ class RefreshToken(Base):
 
 
 class StripeEvent(Base):
-    """
-    Registro de webhooks de Stripe procesados.
-    OWASP A08: Idempotencia — event_id único previene procesamiento doble.
-    """
     __tablename__ = "stripe_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(128), nullable=False)
     processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="processed"
-    )  # processed / failed / ignored
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="processed")
     error: Mapped[Optional[str]] = mapped_column(Text)
