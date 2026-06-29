@@ -7,6 +7,8 @@ OWASP Top 10 Mitigations:
 """
 import time
 import uuid
+
+from httpx import request
 import structlog
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -128,8 +130,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
     def _get_limit(self, request: Request) -> int:
+        # Usuarios con cookie de sesión son usuarios autenticados
         token = request.headers.get("Authorization", "")
-        if token.startswith("Bearer "):
+        has_cookie = bool(
+            request.cookies.get("access_token") or
+            request.cookies.get("refresh_token")
+        )
+        if token.startswith("Bearer ") or has_cookie:
             return settings.RATE_LIMIT_FREE_PER_MINUTE
         return settings.RATE_LIMIT_ANON_PER_MINUTE
 
